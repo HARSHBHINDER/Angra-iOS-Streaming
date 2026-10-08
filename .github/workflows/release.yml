@@ -13,15 +13,16 @@ jobs:
   release:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - run: brew install xcodegen
+      - uses: actions/checkout@v7
+      - run: brew install xcodegen xcbeautify
       - run: xcodegen generate
 
       - name: Build unsigned app
         run: |
+          set -o pipefail
           xcodebuild build -project "Angra iOS Streaming.xcodeproj" -scheme LivePipe \
             -sdk iphoneos -configuration Release -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | xcbeautify --renderer github-actions
 
       - name: Package .ipa
         run: |
@@ -31,7 +32,7 @@ jobs:
           zip -r "Angra-iOS-Streaming.ipa" Payload
 
       - name: Publish release with IPA
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: Angra-iOS-Streaming.ipa
           generate_release_notes: true

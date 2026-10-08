@@ -9,10 +9,11 @@ jobs:
   build:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
-      - run: brew install xcodegen
+      - uses: actions/checkout@v7
+      - run: brew install xcodegen xcbeautify
       - run: xcodegen generate
       - run: |
+          set -o pipefail
           xcodebuild build -project "Angra iOS Streaming.xcodeproj" -scheme LivePipe \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO | xcbeautify --renderer github-actions
