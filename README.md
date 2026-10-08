@@ -50,14 +50,7 @@ Real-device builds need the `group.dev.livepipe` app group on both targets (app 
 
 ## Releasing on GitHub
 
-Push a tag — CI (macOS runner) builds an unsigned `.ipa` and publishes it:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-GitHub Desktop: History → right-click the latest commit → **Create Tag…** (e.g. `v0.1.1`) → **Push origin**.
+Every push to `main` publishes release `v<MARKETING_VERSION>` (from `project.yml`) with the unsigned `.ipa`, if that version isn't released yet. To ship a new version: bump `MARKETING_VERSION`, commit, **Push origin** in GitHub Desktop. No tags needed.
 
 No secrets needed: the `.ipa` is unsigned on purpose and signed at sideload time.
 
