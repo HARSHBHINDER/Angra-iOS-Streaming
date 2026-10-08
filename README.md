@@ -57,6 +57,8 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+GitHub Desktop: History → right-click the latest commit → **Create Tag…** (e.g. `v0.1.1`) → **Push origin**.
+
 No secrets needed: the `.ipa` is unsigned on purpose and signed at sideload time.
 
 ## License
