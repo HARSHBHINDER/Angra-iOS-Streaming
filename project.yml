@@ -16,6 +16,8 @@ targets:
       path: LivePipe/Info.plist
       properties:
         CFBundleDisplayName: Angra iOS Streaming
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
     entitlements:
       path: LivePipe/LivePipe.entitlements
@@ -42,6 +44,8 @@ targets:
       path: BroadcastExt/Info.plist
       properties:
         CFBundleDisplayName: Angra iOS Streaming
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.broadcast-services-upload
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
