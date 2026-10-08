@@ -1,0 +1,37 @@
+name: release
+
+# Tag push -> build an UNSIGNED .ipa on macOS -> publish a GitHub Release with it attached.
+# Unsigned on purpose: iLoader / Sideloadly / AltStore re-sign with the user's Apple ID at install.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+
+      - name: Build unsigned app
+        run: |
+          xcodebuild build -project "Angra iOS Streaming.xcodeproj" -scheme LivePipe \
+            -sdk iphoneos -configuration Release -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+      - name: Package .ipa
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r "Angra-iOS-Streaming.ipa" Payload
+
+      - name: Publish release with IPA
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Angra-iOS-Streaming.ipa
+          generate_release_notes: true
