@@ -3,7 +3,9 @@ name: ci
 # Build check on every push/PR: generate the project and compile for the simulator (unsigned).
 on:
   push:
+    paths-ignore: ["**.md", "LICENSE", "docs/**"]   # docs-only pushes don't need a macOS runner
   pull_request:
+    paths-ignore: ["**.md", "LICENSE", "docs/**"]
 
 jobs:
   build:

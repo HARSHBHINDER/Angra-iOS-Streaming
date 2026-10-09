@@ -14,26 +14,32 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: macos-26
-    env:
-      GH_TOKEN: ${{ github.token }}
+  # Cheap Linux check first, so the (often queued) macOS runner is only used when there is a new version.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      exists: ${{ steps.v.outputs.exists }}
     steps:
       - uses: actions/checkout@v7
-
-      - name: Resolve version
-        id: v
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then TAG="$GITHUB_REF_NAME"
           else TAG="v$(grep -m1 'MARKETING_VERSION:' project.yml | grep -oE '[0-9]+(\.[0-9]+)+')"; fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if gh release view "$TAG" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; fi
 
-      - if: steps.v.outputs.exists != 'true'
-        run: brew install xcodegen xcbeautify && xcodegen generate
+  release:
+    needs: version
+    if: needs.version.outputs.exists != 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - run: brew install xcodegen xcbeautify && xcodegen generate
 
       - name: Build unsigned app
-        if: steps.v.outputs.exists != 'true'
         run: |
           set -o pipefail
           xcodebuild build -project "Angra iOS Streaming.xcodeproj" -scheme LivePipe \
@@ -41,7 +47,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO | xcbeautify --renderer github-actions
 
       - name: Package .ipa
-        if: steps.v.outputs.exists != 'true'
         run: |
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)
           mkdir -p Payload
@@ -49,10 +54,9 @@ jobs:
           zip -r "Angra-iOS-Streaming.ipa" Payload
 
       - name: Publish release with IPA
-        if: steps.v.outputs.exists != 'true'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.v.outputs.tag }}
+          tag_name: ${{ needs.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: Angra-iOS-Streaming.ipa
           generate_release_notes: true
