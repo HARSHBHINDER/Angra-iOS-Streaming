@@ -16,7 +16,7 @@ permissions:
 jobs:
   # Cheap Linux check first, so the (often queued) macOS runner is only used when there is a new version.
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.v.outputs.tag }}
       exists: ${{ steps.v.outputs.exists }}
