@@ -64,6 +64,7 @@ struct Prefs: Codable, Equatable {
     var adaptiveBitrate = true
     var micVolume = 1.0          // audio mixer, 0...1.5 (0 = muted)
     var gameVolume = 1.0
+    var breakFile = ""           // break screen image in the app group; empty = plain black, no branding
     // Recording reuses the active channel's resolution/bitrate (single encoder). No floating bubble on
     // iOS: the OS has no cross-app overlay — status shows via the OS indicator (Live Activity planned).
     static let audioMic = 0, audioGame = 1, audioMix = 2
@@ -77,6 +78,7 @@ extension Prefs {
         recordWhileStreaming = v(.recordWhileStreaming, d.recordWhileStreaming)
         audioSource = v(.audioSource, d.audioSource); adaptiveBitrate = v(.adaptiveBitrate, d.adaptiveBitrate)
         micVolume = v(.micVolume, d.micVolume); gameVolume = v(.gameVolume, d.gameVolume)
+        breakFile = v(.breakFile, d.breakFile)
     }
 }
 
@@ -131,9 +133,10 @@ enum Store {
         get { defaults.bool(forKey: "micMuted") }
         set { defaults.set(newValue, forKey: "micMuted") }
     }
-    static var screenHidden: Bool {
-        get { defaults.bool(forKey: "screenHidden") }
-        set { defaults.set(newValue, forKey: "screenHidden") }
+    /// Break screen on air (stream keeps running; viewers see black or the break image).
+    static var onBreak: Bool {
+        get { defaults.bool(forKey: "onBreak") }
+        set { defaults.set(newValue, forKey: "onBreak") }
     }
     static var stopRequested: Bool {
         get { defaults.bool(forKey: "stopRequested") }

@@ -8,7 +8,7 @@ import Foundation
 struct StreamActivity: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var micMuted = false
-        var screenHidden = false
+        var onBreak = false
     }
     var channel: String
     var start: Date
@@ -23,7 +23,7 @@ enum LiveControls {
     }
 
     static func refresh() async {
-        let state = StreamActivity.ContentState(micMuted: Store.micMuted, screenHidden: Store.screenHidden)
+        let state = StreamActivity.ContentState(micMuted: Store.micMuted, onBreak: Store.onBreak)
         for a in Activity<StreamActivity>.activities { await a.update(ActivityContent(state: state, staleDate: nil)) }
     }
 
@@ -41,10 +41,10 @@ struct ToggleMicIntent: LiveActivityIntent {
     }
 }
 
-struct ToggleScreenIntent: LiveActivityIntent {
-    static let title: LocalizedStringResource = "Hide or show screen"
+struct ToggleBreakIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Start or end break"
     func perform() async throws -> some IntentResult {
-        Store.screenHidden.toggle()
+        Store.onBreak.toggle()
         await LiveControls.refresh()
         return .result()
     }

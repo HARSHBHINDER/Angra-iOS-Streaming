@@ -173,22 +173,9 @@ struct SceneEditorView: View {
 
     // MARK: Overlay + mixer
 
-    /// Copies the picked image into the app group (the original can then be deleted). Animated GIFs are kept
-    /// as-is; stills are downscaled to ≤1920 px PNG so the memory-capped extension stays safe. A new file name
-    /// each time lets a live broadcast notice the change.
     private func loadOverlay(_ item: PhotosPickerItem?) async {
         guard let item, let data = try? await item.loadTransferable(type: Data.self),
-              let src = CGImageSourceCreateWithData(data as CFData, nil) else { return }
-        let stamp = Int(Date().timeIntervalSince1970)
-        let file: String, bytes: Data
-        if CGImageSourceGetCount(src) > 1 {
-            file = "overlay_\(d.id)_\(stamp).gif"; bytes = data
-        } else {
-            guard let cg = AnimatedImage.image(src, 0, maxPixels: 1920), let png = UIImage(cgImage: cg).pngData() else { return }
-            file = "overlay_\(d.id)_\(stamp).png"; bytes = png
-        }
-        guard let url = Store.overlayURL(file) else { return }
-        try? bytes.write(to: url, options: .atomic)
+              let file = saveImage(data, prefix: "overlay_\(d.id)"), let url = Store.overlayURL(file) else { return }
         if let old = Store.overlayURL(d.overlayFile) { try? FileManager.default.removeItem(at: old) }
         overlayImage = loadPreview(url); d.overlayFile = file; layer = 1
     }
@@ -256,4 +243,21 @@ struct AnimatedImageView: UIViewRepresentable {
         return v
     }
     func updateUIView(_ v: UIImageView, context: Context) { if v.image !== image { v.image = image } }
+}
+
+/// Copies a picked image into the app group (the original can then be deleted): animated GIFs as-is, stills
+/// downscaled to a ≤1920 px PNG so the memory-capped extension stays safe. A fresh name each time lets a live
+/// broadcast notice the change. Returns the file name.
+func saveImage(_ data: Data, prefix: String) -> String? {
+    guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    let stamp = Int(Date().timeIntervalSince1970)
+    let file: String, bytes: Data
+    if CGImageSourceGetCount(src) > 1 {
+        file = "\(prefix)_\(stamp).gif"; bytes = data
+    } else {
+        guard let cg = AnimatedImage.image(src, 0, maxPixels: 1920), let png = UIImage(cgImage: cg).pngData() else { return nil }
+        file = "\(prefix)_\(stamp).png"; bytes = png
+    }
+    guard let url = Store.overlayURL(file), (try? bytes.write(to: url, options: .atomic)) != nil else { return nil }
+    return file
 }

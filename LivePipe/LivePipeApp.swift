@@ -157,6 +157,8 @@ struct StreamTab: View {
                         .padding(.top, 12)
                     }
 
+                    BreakCard(live: liveSince != nil, prefs: $prefs).padding(.top, 12)
+
                     HStack(alignment: .lastTextBaseline) {
                         section("Channels")
                         Spacer()
@@ -308,6 +310,80 @@ struct StudioCard: View {
 }
 
 /// At-a-glance tile with an iOS Settings-style coloured icon square.
+/// Break screen: covers the stream while it keeps running (audio continues). Plain black with no name or
+/// branding, or the user's own image / GIF fitted without stretching. Reaches the broadcast within a second.
+struct BreakCard: View {
+    let live: Bool
+    @Binding var prefs: Prefs
+    @State private var onBreak = Store.onBreak
+    @State private var item: PhotosPickerItem?
+    @State private var showPicker = false
+    @State private var thumb: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "pause.fill").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(onBreak ? Color.red : Color(white: 0.17), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Break screen").font(.body.weight(.semibold))
+                    Text(onBreak ? "On air: viewers see your break screen"
+                         : live ? "Cover the stream without ending it" : "Ready for when you go live")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(onBreak ? "End" : "Start") { setBreak(!onBreak) }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                    .tint(onBreak ? .red : .ember)
+                    .disabled(!live)
+            }
+            HStack(spacing: 12) {
+                // What viewers will see, at stream shape.
+                ZStack {
+                    Color.black
+                    if let thumb { Image(uiImage: thumb).resizable().scaledToFit() }
+                }
+                .frame(width: 104, height: 58.5)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color(.separator), lineWidth: 0.5))
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Break screen", selection: Binding(get: { !prefs.breakFile.isEmpty },
+                                                              set: { custom in if custom { showPicker = true } else { setFile("") } })) {
+                        Text("Black").tag(false); Text("My image").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    if !prefs.breakFile.isEmpty { Button("Change image") { showPicker = true }.font(.subheadline) }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .photosPicker(isPresented: $showPicker, selection: $item, matching: .images)
+        .onChange(of: item) { _, picked in
+            Task {
+                guard let picked, let data = try? await picked.loadTransferable(type: Data.self),
+                      let file = saveImage(data, prefix: "break") else { return }
+                setFile(file)
+            }
+        }
+        .onAppear { onBreak = Store.onBreak; thumb = Store.overlayURL(prefs.breakFile).flatMap { loadPreview($0) } }
+        .onChange(of: live) { _, isLive in if !isLive { onBreak = false } }
+    }
+
+    private func setBreak(_ on: Bool) {
+        Store.onBreak = on; onBreak = on
+        Task { await LiveControls.refresh() }          // keep the Live Activity button in step
+    }
+
+    private func setFile(_ file: String) {
+        if file != prefs.breakFile, let old = Store.overlayURL(prefs.breakFile) { try? FileManager.default.removeItem(at: old) }
+        prefs.breakFile = file                          // StreamTab saves prefs; the broadcast reloads within a second
+        thumb = Store.overlayURL(file).flatMap { loadPreview($0) }
+    }
+}
+
 struct StatTile: View {
     let icon: String, tint: Color, value: String, caption: String
     var body: some View {

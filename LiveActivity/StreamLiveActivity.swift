@@ -8,7 +8,7 @@ struct LiveActivityBundle: WidgetBundle {
     var body: some Widget { StreamLiveActivity() }
 }
 
-/// The iOS "bubble": live timer plus Mute mic / Hide screen / End in the Dynamic Island and on the Lock Screen.
+/// The iOS "bubble": live timer plus Mute mic / Break / End in the Dynamic Island and on the Lock Screen.
 struct StreamLiveActivity: Widget {
     private static let ember = Color(red: 0.95, green: 0.33, blue: 0.18)
 
@@ -59,8 +59,8 @@ struct StreamLiveActivity: Widget {
     private func controls(_ s: StreamActivity.ContentState) -> some View {
         HStack(spacing: 10) {
             control(ToggleMicIntent(), s.micMuted ? "mic.slash.fill" : "mic.fill", s.micMuted ? "Unmute" : "Mute", on: s.micMuted)
-            control(ToggleScreenIntent(), s.screenHidden ? "eye.slash.fill" : "eye.fill",
-                    s.screenHidden ? "Show" : "Hide", on: s.screenHidden)
+            control(ToggleBreakIntent(), s.onBreak ? "play.fill" : "pause.fill",
+                    s.onBreak ? "Resume" : "Break", on: s.onBreak)
             control(EndStreamIntent(), "stop.fill", "End", on: true)
         }
     }
