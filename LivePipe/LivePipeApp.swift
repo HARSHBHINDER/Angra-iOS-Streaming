@@ -1,3 +1,4 @@
+import PhotosUI
 import ReplayKit
 import SwiftUI
 
@@ -92,6 +93,7 @@ struct StreamTab: View {
     // ponytail: "live" = screen is being captured (broadcast, recording or mirroring); the extension runs in
     // another process, so use an app-group heartbeat if this needs to be broadcast-specific.
     @State private var liveSince: Date?
+    @State private var sceneDest: Destination?      // scene editor sheet, edits save live
 
     private var active: Destination? { destinations.first { $0.id == activeId } ?? destinations.first }
 
@@ -133,6 +135,28 @@ struct StreamTab: View {
                         }
                     }
 
+                    // Scene & mixer: arrange layers on the real stream frame; edits reach the broadcast within a second.
+                    if let active {
+                        Button { sceneDest = active } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "rectangle.3.group.fill").font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.white).frame(width: 34, height: 34)
+                                    .background(emberGradient, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Scene & Audio Mixer").font(.body.weight(.semibold)).foregroundStyle(.primary)
+                                    Text(liveSince != nil ? "Adjust layers and volume live" : sceneSummary(active))
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            }
+                            .padding(14)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        }
+                        .buttonStyle(PressScale())
+                        .padding(.top, 12)
+                    }
+
                     HStack(alignment: .lastTextBaseline) {
                         section("Channels")
                         Spacer()
@@ -162,6 +186,9 @@ struct StreamTab: View {
             .onChange(of: prefs) { _, new in Store.prefs = new }
             .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
                 liveSince = UIScreen.main.isCaptured ? Date() : nil
+            }
+            .sheet(item: $sceneDest, onDismiss: { destinations = Store.destinations; prefs = Store.prefs }) { dest in
+                LiveSceneSheet(dest: dest)
             }
         }
     }
@@ -459,6 +486,16 @@ struct ChannelEditor: View {
                         ForEach(sampleRates, id: \.self) { Text("\($0 / 1000)kHz").tag($0) }
                     }
                     Toggle("Stereo", isOn: $d.stereo)
+                }
+                Section {
+                    NavigationLink { SceneEditorView(d: $d) } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Scene & Audio Mixer")
+                            Text(sceneSummary(d)).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: { Text("Scene & audio") } footer: {
+                    Text("Arrange your screen and overlay on the real stream frame, and set mic/game volume.")
                 }
             }
             .navigationTitle(existing == nil ? "New Channel" : "Edit Channel")
