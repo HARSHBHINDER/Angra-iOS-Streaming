@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// Shared between the app and the broadcast extension via the app group.
 /// Mirrors the Android Destination/Prefs model so both platforms behave the same.
@@ -30,6 +31,7 @@ struct Destination: Codable, Identifiable, Equatable {
     var overlayX = 0.82
     var overlayY = 0.18
     var overlayW = 0.25
+    var pinned = false          // favourites sit at the top of the list, no limit
 
     var endpoint: String { key.isEmpty ? url : url.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/" + key }
     /// Stream canvas size in pixels (portrait channels swap the sides).
@@ -52,6 +54,7 @@ extension Destination {
         screenPanX = v(.screenPanX, d.screenPanX); screenPanY = v(.screenPanY, d.screenPanY)
         overlayFile = v(.overlayFile, d.overlayFile)
         overlayX = v(.overlayX, d.overlayX); overlayY = v(.overlayY, d.overlayY); overlayW = v(.overlayW, d.overlayW)
+        pinned = v(.pinned, d.pinned)
     }
 }
 
@@ -127,5 +130,34 @@ enum Store {
     static func overlayURL(_ file: String) -> URL? {
         guard !file.isEmpty else { return nil }
         return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)?.appendingPathComponent(file)
+    }
+}
+
+/// Animated overlays (GIF): per-frame delays, read the way browsers do (tiny delays become 0.1 s).
+enum AnimatedImage {
+    static func delays(_ src: CGImageSource) -> [Double] {
+        (0..<CGImageSourceGetCount(src)).map { i in
+            let gif = (CGImageSourceCopyPropertiesAtIndex(src, i, nil) as? [CFString: Any])?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+            let d = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double) ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
+            return d < 0.011 ? 0.1 : d
+        }
+    }
+
+    /// Frame showing at time t (seconds), looping.
+    static func frame(at t: Double, delays: [Double]) -> Int {
+        let total = delays.reduce(0, +)
+        guard total > 0 else { return 0 }
+        var r = t.truncatingRemainder(dividingBy: total)
+        for (i, d) in delays.enumerated() { if r < d { return i }; r -= d }
+        return delays.count - 1
+    }
+
+    /// Decodes one frame downsampled to maxPixels, so memory stays bounded whatever the file size.
+    static func image(_ src: CGImageSource, _ i: Int, maxPixels: Int) -> CGImage? {
+        CGImageSourceCreateThumbnailAtIndex(src, i, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+        ] as CFDictionary)
     }
 }

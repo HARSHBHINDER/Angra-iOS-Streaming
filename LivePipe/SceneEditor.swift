@@ -1,3 +1,4 @@
+import ImageIO
 import PhotosUI
 import SwiftUI
 
@@ -55,13 +56,16 @@ struct SceneEditorView: View {
                     if !d.overlayFile.isEmpty {
                         VStack(alignment: .leading) {
                             LabeledContent("Size", value: "\(Int(d.overlayW * 100))% of width")
-                            Slider(value: $d.overlayW, in: 0.05...1)
+                            Slider(value: $d.overlayW, in: 0.05...2)
                         }
                         Button("Fill canvas") { d.overlayX = 0.5; d.overlayY = 0.5; d.overlayW = 1 }
-                        Button("Remove overlay", role: .destructive) { d.overlayFile = ""; overlayImage = nil }
+                        Button("Remove overlay", role: .destructive) {
+                            if let old = Store.overlayURL(d.overlayFile) { try? FileManager.default.removeItem(at: old) }
+                            d.overlayFile = ""; overlayImage = nil
+                        }
                     }
                 } header: { Text("Overlay") } footer: {
-                    Text("A PNG with transparency works as a full-frame overlay.")
+                    Text("Any image, including animated GIFs. It keeps its own shape and may hang past the edges; only the part inside the frame is streamed. A copy is kept in the app, so the original can be deleted.")
                 }
             }
             Section {
@@ -77,7 +81,7 @@ struct SceneEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             prefs = Store.prefs
-            overlayImage = Store.overlayURL(d.overlayFile).flatMap { UIImage(contentsOfFile: $0.path) }
+            overlayImage = Store.overlayURL(d.overlayFile).flatMap { loadPreview($0) }
         }
         .onChange(of: prefs) { _, p in Store.prefs = p }
         .onChange(of: pickerItem) { _, item in Task { await loadOverlay(item) } }
@@ -108,7 +112,7 @@ struct SceneEditorView: View {
                 if let img = overlayImage, !d.overlayFile.isEmpty, img.size.width > 0 {
                     let ow = d.overlayW * W
                     let oh = ow * Double(img.size.height / img.size.width)
-                    Image(uiImage: img).resizable()
+                    AnimatedImageView(image: img)
                         .frame(width: ow, height: oh)
                         .overlay(Rectangle().stroke(layer == 1 ? Color.ember : .clear, lineWidth: 2))
                         .offset(x: d.overlayX * W - ow / 2, y: d.overlayY * H - oh / 2)
@@ -143,7 +147,7 @@ struct SceneEditorView: View {
                 guard let b = base else { return }
                 let dx = Double(g.translation.width) / W, dy = Double(g.translation.height) / H
                 if layer == 1 {
-                    d.overlayX = min(max(b.overlayX + dx, 0), 1); d.overlayY = min(max(b.overlayY + dy, 0), 1)
+                    d.overlayX = min(max(b.overlayX + dx, -0.5), 1.5); d.overlayY = min(max(b.overlayY + dy, -0.5), 1.5)
                 } else {
                     // Move the window opposite the drag so the content follows the finger.
                     let v = ScreenView(sourceAspect: sourceAspect, canvasAspect: canvasAspect, fit: b.screenFit,
@@ -161,7 +165,7 @@ struct SceneEditorView: View {
                 if base == nil { base = d }
                 guard let b = base else { return }
                 let k = Double(m.magnification)
-                if layer == 1 { d.overlayW = min(max(b.overlayW * k, 0.05), 1) }
+                if layer == 1 { d.overlayW = min(max(b.overlayW * k, 0.05), 2) }
                 else { d.screenZoom = min(max(b.screenZoom * k, 1), ScreenView.maxZoom) }
             }
             .onEnded { _ in base = nil }
@@ -169,19 +173,24 @@ struct SceneEditorView: View {
 
     // MARK: Overlay + mixer
 
-    /// Saves the picked image (downscaled to ≤1920 px so the memory-capped extension stays safe) into the
-    /// app group under a new name, so a live broadcast notices the change.
+    /// Copies the picked image into the app group (the original can then be deleted). Animated GIFs are kept
+    /// as-is; stills are downscaled to ≤1920 px PNG so the memory-capped extension stays safe. A new file name
+    /// each time lets a live broadcast notice the change.
     private func loadOverlay(_ item: PhotosPickerItem?) async {
-        guard let item, let data = try? await item.loadTransferable(type: Data.self), let img = UIImage(data: data) else { return }
-        let scale = min(1, 1920 / max(img.size.width, img.size.height))
-        let size = CGSize(width: (img.size.width * scale).rounded(), height: (img.size.height * scale).rounded())
-        let format = UIGraphicsImageRendererFormat(); format.scale = 1
-        let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
-        let file = "overlay_\(d.id)_\(Int(Date().timeIntervalSince1970)).png"
-        guard let png = small.pngData(), let url = Store.overlayURL(file) else { return }
-        try? png.write(to: url, options: .atomic)
+        guard let item, let data = try? await item.loadTransferable(type: Data.self),
+              let src = CGImageSourceCreateWithData(data as CFData, nil) else { return }
+        let stamp = Int(Date().timeIntervalSince1970)
+        let file: String, bytes: Data
+        if CGImageSourceGetCount(src) > 1 {
+            file = "overlay_\(d.id)_\(stamp).gif"; bytes = data
+        } else {
+            guard let cg = AnimatedImage.image(src, 0, maxPixels: 1920), let png = UIImage(cgImage: cg).pngData() else { return }
+            file = "overlay_\(d.id)_\(stamp).png"; bytes = png
+        }
+        guard let url = Store.overlayURL(file) else { return }
+        try? bytes.write(to: url, options: .atomic)
         if let old = Store.overlayURL(d.overlayFile) { try? FileManager.default.removeItem(at: old) }
-        overlayImage = small; d.overlayFile = file; layer = 1
+        overlayImage = loadPreview(url); d.overlayFile = file; layer = 1
     }
 
     private func mixerRow(_ title: String, _ icon: String, _ value: Binding<Double>, _ enabled: Bool) -> some View {
@@ -226,4 +235,25 @@ struct LiveSceneSheet: View {
             if let i = list.firstIndex(where: { $0.id == new.id }) { list[i] = new; Store.destinations = list }
         }
     }
+}
+
+/// Editor preview of an overlay; GIFs become an animated UIImage (frames downsampled, preview only).
+func loadPreview(_ url: URL) -> UIImage? {
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    let n = CGImageSourceGetCount(src)
+    guard n > 1 else { return AnimatedImage.image(src, 0, maxPixels: 1280).map(UIImage.init(cgImage:)) }
+    let frames = (0..<n).compactMap { AnimatedImage.image(src, $0, maxPixels: 480).map(UIImage.init(cgImage:)) }
+    return UIImage.animatedImage(with: frames, duration: AnimatedImage.delays(src).reduce(0, +))
+}
+
+/// SwiftUI's Image shows only the first frame of an animated UIImage; UIImageView plays it.
+struct AnimatedImageView: UIViewRepresentable {
+    let image: UIImage
+    func makeUIView(context: Context) -> UIImageView {
+        let v = UIImageView(); v.contentMode = .scaleToFill   // frame already has the image's aspect
+        v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        v.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        return v
+    }
+    func updateUIView(_ v: UIImageView, context: Context) { if v.image !== image { v.image = image } }
 }

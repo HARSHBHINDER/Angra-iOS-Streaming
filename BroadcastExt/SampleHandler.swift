@@ -147,14 +147,25 @@ private final class Compositor {
     private var poolSize = CGSize.zero
     private var overlayFile = ""
     private var overlay: CIImage?
+    private var anim: CGImageSource?            // animated overlay (GIF): one frame decoded at a time
+    private var delays: [Double] = []
+    private var frameIndex = -1
 
     func render(_ src: CVPixelBuffer, orientation: CGImagePropertyOrientation, dest: Destination, pts: CMTime) -> CMSampleBuffer? {
         let size = dest.canvas
         let W = size.width, H = size.height
         if poolSize != size { pool = Self.makePool(size); poolSize = size }
         if overlayFile != dest.overlayFile {
-            overlayFile = dest.overlayFile
-            overlay = Store.overlayURL(dest.overlayFile).flatMap { CIImage(contentsOf: $0) }
+            overlayFile = dest.overlayFile; overlay = nil; anim = nil; frameIndex = -1
+            if let url = Store.overlayURL(dest.overlayFile), let src = CGImageSourceCreateWithURL(url as CFURL, nil) {
+                if CGImageSourceGetCount(src) > 1 { anim = src; delays = AnimatedImage.delays(src) }
+                else { overlay = AnimatedImage.image(src, 0, maxPixels: 1920).map { CIImage(cgImage: $0) } }
+            }
+        }
+        // Decode only when the GIF frame changes (GIFs run at ~10-25 fps, the stream at 30-60).
+        if let anim {
+            let i = AnimatedImage.frame(at: pts.seconds, delays: delays)
+            if i != frameIndex { frameIndex = i; overlay = AnimatedImage.image(anim, i, maxPixels: 960).map { CIImage(cgImage: $0) } }
         }
 
         var screen = CIImage(cvPixelBuffer: src).oriented(orientation)

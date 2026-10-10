@@ -361,50 +361,188 @@ struct ChannelsTab: View {
     @State private var activeId = Store.activeId
     @State private var editing: Destination?
     @State private var showEditor = false
+    @State private var editMode = EditMode.inactive
+    @State private var selected = Set<String>()
+    @State private var moving: Destination?
+    @State private var confirmDelete = false
+
+    /// Display order: pinned first, each group in saved order. Positions 1...N refer to this order.
+    private var ordered: [Destination] { destinations.filter(\.pinned) + destinations.filter { !$0.pinned } }
 
     var body: some View {
         NavigationStack {
-            List {
+            List(selection: $selected) {
                 if destinations.isEmpty {
-                    Text("No channels yet. Tap + to add YouTube, Twitch, Kick, Facebook or a custom RTMP URL.")
+                    Text("No channels yet. Tap + to add YouTube, Twitch, Kick, Facebook or a custom RTMP URL. Make as many profiles as you like, e.g. one YouTube channel per game.")
                         .font(.subheadline).foregroundStyle(.secondary).listRowBackground(Color.clear)
                 } else {
-                    Section("Tap to make active") {
-                        ForEach(destinations) { d in
-                            HStack(spacing: 12) {
-                                Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Color.ember)
-                                    .opacity(d.id == (activeId ?? destinations.first?.id) ? 1 : 0)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(d.name).font(.body.weight(.semibold))
-                                    Text(summary(d)).font(.footnote).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button("Edit") { editing = d; showEditor = true }.buttonStyle(.borderless)
+                    Section {
+                        ForEach(Array(ordered.enumerated()), id: \.element.id) { i, d in row(i, d) }
+                            .onMove { from, to in
+                                guard from.count == 1, let s = from.first else { return }
+                                move(ordered[s].id, to: to > s ? to - 1 : to)
                             }
-                            .contentShape(Rectangle())
-                            .onTapGesture { Store.activeId = d.id; activeId = d.id }
-                        }
-                        .onDelete { idx in
-                            destinations.remove(atOffsets: idx); Store.destinations = destinations
-                        }
+                    } header: {
+                        Text(editMode.isEditing ? "Swipe down the circles to select · drag ≡ to reorder" : "Tap to make active · tap the number to move")
                     }
                 }
             }
+            .environment(\.editMode, $editMode)
             .scrollContentBackground(.hidden)
             .background(EmberBackdrop())
             .navigationTitle("Channels")
-            .toolbar { Button { editing = nil; showEditor = true } label: { Image(systemName: "plus") } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if !destinations.isEmpty {
+                        Button(editMode.isEditing ? "Done" : "Select") {
+                            withAnimation { editMode = editMode.isEditing ? .inactive : .active; selected = [] }
+                        }
+                        .fontWeight(editMode.isEditing ? .semibold : .regular)
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !editMode.isEditing { Button { editing = nil; showEditor = true } label: { Image(systemName: "plus") } }
+                }
+                ToolbarItemGroup(placement: .bottomBar) {
+                    if editMode.isEditing {
+                        Button("Pin") { setPinned(true) }.disabled(selected.isEmpty)
+                        Spacer()
+                        Button("Unpin") { setPinned(false) }.disabled(selected.isEmpty)
+                        Spacer()
+                        Button(selected.isEmpty ? "Delete" : "Delete (\(selected.count))", role: .destructive) { confirmDelete = true }
+                            .disabled(selected.isEmpty)
+                    }
+                }
+            }
+            .toolbar(editMode.isEditing ? .visible : .hidden, for: .bottomBar)
+            .confirmationDialog("Delete \(selected.count) channel\(selected.count == 1 ? "" : "s")?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) { delete(selected); selected = [] }
+            } message: {
+                Text("Their settings, scenes and overlay copies are removed from the app. This can't be undone.")
+            }
             .onAppear { destinations = Store.destinations; activeId = Store.activeId }
             .sheet(isPresented: $showEditor) {
                 ChannelEditor(existing: editing) { saved in
                     if let i = destinations.firstIndex(where: { $0.id == saved.id }) { destinations[i] = saved }
                     else { destinations.append(saved) }
-                    Store.destinations = destinations
+                    persist()
                     if Store.activeId == nil { Store.activeId = saved.id; activeId = saved.id }
                     showEditor = false
                 }
             }
+            .sheet(item: $moving) { m in
+                PositionSheet(name: m.name, current: (ordered.firstIndex { $0.id == m.id } ?? 0) + 1, count: ordered.count) { pos in
+                    move(m.id, to: pos - 1)
+                }
+            }
         }
+    }
+
+    private func row(_ i: Int, _ d: Destination) -> some View {
+        HStack(spacing: 12) {
+            if !editMode.isEditing {
+                // Position badge: tap for the number wheel to move this channel anywhere.
+                Button { moving = d } label: {
+                    Text("\(i + 1)").font(.footnote.weight(.semibold)).monospacedDigit()
+                        .frame(minWidth: 34, minHeight: 26)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.borderless).tint(.primary)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    if d.pinned { Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.ember) }
+                    Text(d.name).font(.body.weight(.semibold)).lineLimit(1)
+                }
+                Text(summary(d)).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if !editMode.isEditing {
+                Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Color.ember)
+                    .opacity(d.id == (activeId ?? ordered.first?.id) ? 1 : 0)
+                Button("Edit") { editing = d; showEditor = true }.buttonStyle(.borderless)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if !editMode.isEditing { Store.activeId = d.id; activeId = d.id } }
+        .swipeActions(edge: .leading) {
+            Button { togglePin(d.id) } label: {
+                Label(d.pinned ? "Unpin" : "Pin", systemImage: d.pinned ? "star.slash" : "star")
+            }
+            .tint(.orange)
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) { delete([d.id]) } label: { Label("Delete", systemImage: "trash") }
+            Button { moving = d } label: { Label("Move", systemImage: "arrow.up.arrow.down") }.tint(.indigo)
+        }
+    }
+
+    private func persist() { destinations = ordered; Store.destinations = destinations }
+
+    private func togglePin(_ id: String) {
+        if let i = destinations.firstIndex(where: { $0.id == id }) { destinations[i].pinned.toggle() }
+        persist()
+    }
+
+    private func setPinned(_ on: Bool) {
+        for i in destinations.indices where selected.contains(destinations[i].id) { destinations[i].pinned = on }
+        selected = []; persist()
+    }
+
+    /// Re-inserts a channel at display index `to`. Landing among the pinned channels pins it; below them unpins it.
+    private func move(_ id: String, to: Int) {
+        var rest = ordered
+        guard let from = rest.firstIndex(where: { $0.id == id }) else { return }
+        var m = rest.remove(at: from)
+        let pinnedBefore = rest.filter(\.pinned).count
+        let to = min(max(to, 0), rest.count)
+        m.pinned = to < pinnedBefore || (m.pinned && to == pinnedBefore)
+        rest.insert(m, at: to)
+        destinations = rest; Store.destinations = rest
+    }
+
+    private func delete(_ ids: Set<String>) {
+        for d in destinations where ids.contains(d.id) {
+            if let f = Store.overlayURL(d.overlayFile) { try? FileManager.default.removeItem(at: f) }
+        }
+        destinations.removeAll { ids.contains($0.id) }
+        persist()
+        if let a = activeId, ids.contains(a) { activeId = destinations.first?.id; Store.activeId = activeId }
+        if destinations.isEmpty { editMode = .inactive }
+    }
+}
+
+/// iOS number wheel: spin to the new position (e.g. take entry 25 straight to 1).
+struct PositionSheet: View {
+    let name: String
+    let count: Int
+    let onMove: (Int) -> Void
+    @State private var pos: Int
+    @Environment(\.dismiss) private var dismiss
+
+    init(name: String, current: Int, count: Int, onMove: @escaping (Int) -> Void) {
+        self.name = name; self.count = count; self.onMove = onMove
+        _pos = State(initialValue: current)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 4) {
+                Picker("Position", selection: $pos) {
+                    ForEach(1...max(count, 1), id: \.self) { Text("\($0)").tag($0) }
+                }
+                .pickerStyle(.wheel)
+                Text("Moving above the last pinned channel pins it.").font(.footnote).foregroundStyle(.secondary)
+            }
+            .navigationTitle("Move “\(name)”")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Move") { onMove(pos); dismiss() }.fontWeight(.semibold) }
+            }
+        }
+        .tint(.ember)
+        .presentationDetents([.height(320)])
     }
 }
 
