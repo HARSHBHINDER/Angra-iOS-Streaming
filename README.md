@@ -34,7 +34,7 @@ Free Apple IDs re-sign every 7 days; a paid developer account lasts a year.
 | **Capture** | ReplayKit screen broadcast with mic + app audio; audio-source selection. |
 | **Recording** | Record while streaming. |
 
-The OS red recording indicator stays on whenever broadcasting — by Apple design. Facecam and the floating bubble are Android-only (iOS has no cross-app overlay and the broadcast extension can't run the camera under its memory limit).
+The OS red recording indicator stays on whenever broadcasting — by Apple design. Facecam is Android-only (the broadcast extension can't run the camera under its memory limit). iOS has no cross-app overlay, so instead of a floating bubble the stream controls (live timer, mute mic, hide screen, end stream) sit in a Live Activity in the Dynamic Island and on the Lock Screen.
 
 ## Build
 

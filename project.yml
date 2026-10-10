@@ -19,12 +19,15 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        NSSupportsLiveActivities: true     # stream controls in the Dynamic Island / Lock Screen
     entitlements:
       path: LivePipe/LivePipe.entitlements
       properties:
         com.apple.security.application-groups: [group.dev.livepipe]
     dependencies:
       - target: BroadcastExt
+        embed: true
+      - target: LiveActivity
         embed: true
     settings:
       base:
@@ -62,6 +65,30 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.livepipe.app.broadcast
+        SWIFT_VERSION: "5.0"
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "3"
+        CODE_SIGNING_ALLOWED: NO
+  LiveActivity:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [LiveActivity, LivePipe/LiveControls.swift, LivePipe/Store.swift]
+    info:
+      path: LiveActivity/Info.plist
+      properties:
+        CFBundleDisplayName: Angra iOS Streaming
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: LiveActivity/LiveActivity.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.livepipe]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.livepipe.app.liveactivity
         SWIFT_VERSION: "5.0"
         MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "3"

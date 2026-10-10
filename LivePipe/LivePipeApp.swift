@@ -182,10 +182,14 @@ struct StreamTab: View {
             .onAppear {
                 destinations = Store.destinations; activeId = Store.activeId; prefs = Store.prefs
                 if UIScreen.main.isCaptured, liveSince == nil { liveSince = Date() }
+                if !UIScreen.main.isCaptured { Task { await LiveControls.end() } }   // stream ended while away
             }
             .onChange(of: prefs) { _, new in Store.prefs = new }
             .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
                 liveSince = UIScreen.main.isCaptured ? Date() : nil
+                // Stream controls in the Dynamic Island / Lock Screen while live (iOS's answer to a bubble).
+                if liveSince != nil { LiveControls.start(channel: active?.name ?? "Live") }
+                else { Task { await LiveControls.end() } }
             }
             .sheet(item: $sceneDest, onDismiss: { destinations = Store.destinations; prefs = Store.prefs }) { dest in
                 LiveSceneSheet(dest: dest)

@@ -17,6 +17,8 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     private let lock = NSLock()
     private var dest: Destination?
     private var prefs = Prefs()
+    private var micMuted = false        // live controls from the Live Activity
+    private var screenHidden = false
     private var reload: Task<Void, Never>?
 
     /// Reads the active channel straight from the shared group so the extension needs no app-only code.
@@ -40,6 +42,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
             return
         }
         let startPrefs = Store.prefs
+        Store.micMuted = false; Store.screenHidden = false; Store.stopRequested = false
         lock.withLock { self.dest = dest; self.prefs = startPrefs }
         Task {
             do {
@@ -78,6 +81,14 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
 
     /// Picks up layout and volume changes; the canvas size stays fixed for the whole broadcast.
     private func reloadLive() async {
+        if Store.stopRequested {
+            Store.stopRequested = false
+            finishBroadcastWithError(NSError(domain: "LivePipe", code: 2,
+                                             userInfo: [NSLocalizedDescriptionKey: "Stream ended."]))
+            return
+        }
+        let muted = Store.micMuted, hidden = Store.screenHidden
+        lock.withLock { micMuted = muted; screenHidden = hidden }
         let p = Store.prefs
         let changed = lock.withLock { () -> Bool in
             defer { prefs = p }
@@ -101,7 +112,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
-        let (dest, prefs) = lock.withLock { (self.dest, self.prefs) }
+        let (dest, prefs, micMuted, screenHidden) = lock.withLock { (self.dest, self.prefs, self.micMuted, self.screenHidden) }
         switch sampleBufferType {
         case .video:
             guard let dest, let pixels = sampleBuffer.imageBuffer else { return }
@@ -109,7 +120,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
             let raw = (CMGetAttachment(sampleBuffer, key: RPVideoSampleOrientationKey as CFString,
                                        attachmentModeOut: nil) as? NSNumber)?.uint32Value
             let orientation = raw.flatMap { CGImagePropertyOrientation(rawValue: $0) } ?? .up
-            guard let frame = compositor.render(pixels, orientation: orientation, dest: dest,
+            guard let frame = compositor.render(pixels, orientation: orientation, dest: dest, hidden: screenHidden,
                                                 pts: sampleBuffer.presentationTimeStamp) else { return }
             if needVideoConfiguration {
                 needVideoConfiguration = false
@@ -126,7 +137,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
             }
             Task { await mixer.append(frame) }
         case .audioMic:
-            if prefs.audioSource != 1, sampleBuffer.dataReadiness == .ready {   // skip mic when "game only"
+            if prefs.audioSource != 1, !micMuted, sampleBuffer.dataReadiness == .ready {   // skip mic when "game only" or muted
                 Task { await mixer.append(sampleBuffer, track: 0) }
             }
         case .audioApp:
@@ -151,7 +162,9 @@ private final class Compositor {
     private var delays: [Double] = []
     private var frameIndex = -1
 
-    func render(_ src: CVPixelBuffer, orientation: CGImagePropertyOrientation, dest: Destination, pts: CMTime) -> CMSampleBuffer? {
+    /// `hidden` = privacy mode: viewers get a black frame (audio keeps going).
+    func render(_ src: CVPixelBuffer, orientation: CGImagePropertyOrientation, dest: Destination, hidden: Bool,
+                pts: CMTime) -> CMSampleBuffer? {
         let size = dest.canvas
         let W = size.width, H = size.height
         if poolSize != size { pool = Self.makePool(size); poolSize = size }
@@ -190,7 +203,7 @@ private final class Compositor {
                 .transformed(by: CGAffineTransform(translationX: dest.overlayX * W - ow / 2, y: H - (dest.overlayY * H + oh / 2)))
             out = placed.composited(over: out)
         }
-        out = out.cropped(to: canvasRect)
+        out = hidden ? CIImage(color: .black).cropped(to: canvasRect) : out.cropped(to: canvasRect)
 
         var pb: CVPixelBuffer?
         guard let pool, CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb) == kCVReturnSuccess, let pb else { return nil }

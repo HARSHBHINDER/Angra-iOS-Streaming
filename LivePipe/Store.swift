@@ -126,6 +126,20 @@ enum Store {
         set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "prefs") }
     }
 
+    /// Live controls: written by the Live Activity buttons, read by the broadcast extension once a second.
+    static var micMuted: Bool {
+        get { defaults.bool(forKey: "micMuted") }
+        set { defaults.set(newValue, forKey: "micMuted") }
+    }
+    static var screenHidden: Bool {
+        get { defaults.bool(forKey: "screenHidden") }
+        set { defaults.set(newValue, forKey: "screenHidden") }
+    }
+    static var stopRequested: Bool {
+        get { defaults.bool(forKey: "stopRequested") }
+        set { defaults.set(newValue, forKey: "stopRequested") }
+    }
+
     /// Overlay images live in the app-group container so the broadcast extension can read them.
     static func overlayURL(_ file: String) -> URL? {
         guard !file.isEmpty else { return nil }
