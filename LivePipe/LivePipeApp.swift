@@ -764,8 +764,16 @@ struct SettingsTab: View {
                     Text("Uses the active channel's resolution and bitrate.")
                 }
                 Section {
-                    Label("The red recording indicator is always shown by iOS while broadcasting. iOS has no floating bubble (no cross-app overlays).",
-                          systemImage: "info.circle")
+                    ForEach(0..<ActivityAction.count, id: \.self) { i in
+                        Picker("Button \(i + 1)", selection: slotBinding(i)) {
+                            ForEach(ActivityAction.allCases) { a in Label(a.label, systemImage: a.symbol).tag(a) }
+                        }
+                    }
+                } header: { Text("Live Activity controls") } footer: {
+                    Text("iOS has no floating bubble over other apps, so your stream controls live in the Dynamic Island and on the Lock Screen while you're live. Pick the three buttons; choosing one that's already used swaps them.")
+                }
+                Section {
+                    Label("The red recording indicator is always shown by iOS while broadcasting.", systemImage: "info.circle")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -775,5 +783,15 @@ struct SettingsTab: View {
             .onAppear { prefs = Store.prefs }
             .onChange(of: prefs) { _, new in Store.prefs = new }
         }
+    }
+
+    /// Slot i of the Live Activity; picking an action that's already in another slot swaps the two.
+    private func slotBinding(_ i: Int) -> Binding<ActivityAction> {
+        Binding(get: { ActivityAction.slots(prefs.activitySlots)[i] }, set: { a in
+            var s = ActivityAction.slots(prefs.activitySlots)
+            if let j = s.firstIndex(of: a) { s[j] = s[i] }
+            s[i] = a
+            prefs.activitySlots = s.map(\.rawValue)
+        })
     }
 }

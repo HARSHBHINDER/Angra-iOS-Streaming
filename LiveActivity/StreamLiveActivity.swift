@@ -58,10 +58,24 @@ struct StreamLiveActivity: Widget {
 
     private func controls(_ s: StreamActivity.ContentState) -> some View {
         HStack(spacing: 10) {
-            control(ToggleMicIntent(), s.micMuted ? "mic.slash.fill" : "mic.fill", s.micMuted ? "Unmute" : "Mute", on: s.micMuted)
-            control(ToggleBreakIntent(), s.onBreak ? "play.fill" : "pause.fill",
-                    s.onBreak ? "Resume" : "Break", on: s.onBreak)
-            control(EndStreamIntent(), "stop.fill", "End", on: true)
+            ForEach(ActivityAction.slots(s.slots)) { a in button(a, s) }
+        }
+    }
+
+    @ViewBuilder
+    private func button(_ a: ActivityAction, _ s: StreamActivity.ContentState) -> some View {
+        let on = a.isOn(s)
+        let label = on ? a.onLabel : a.label
+        let symbol = a == .mic && on ? "mic.slash.fill" : a == .breakScreen && on ? "play.fill" : a.symbol
+        switch a {
+        case .mic: control(ToggleMicIntent(), symbol, label, on: on)
+        case .breakScreen: control(ToggleBreakIntent(), symbol, label, on: on)
+        case .end: control(EndStreamIntent(), symbol, label, on: on)
+        case .game: control(ToggleGameIntent(), symbol, label, on: on)
+        case .overlay: control(ToggleOverlayIntent(), symbol, label, on: on)
+        case .saver: control(ToggleDataSaverIntent(), symbol, label, on: on)
+        case .zoom: control(ToggleZoomIntent(), symbol, label, on: on)
+        case .mark: control(MarkHighlightIntent(), symbol, label, on: on)
         }
     }
 

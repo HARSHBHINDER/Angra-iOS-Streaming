@@ -17,8 +17,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     private let lock = NSLock()
     private var dest: Destination?
     private var prefs = Prefs()
-    private var micMuted = false        // live controls from the Live Activity
-    private var onBreak = false
+    private var live = LiveFlags()      // live controls from the Live Activity
     private var reload: Task<Void, Never>?
 
     /// Reads the active channel straight from the shared group so the extension needs no app-only code.
@@ -43,6 +42,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
         }
         let startPrefs = Store.prefs
         Store.micMuted = false; Store.onBreak = false; Store.stopRequested = false
+        Store.gameMuted = false; Store.overlayHidden = false; Store.dataSaver = false; Store.zoomed = false
         lock.withLock { self.dest = dest; self.prefs = startPrefs }
         Task {
             do {
@@ -87,8 +87,17 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
                                              userInfo: [NSLocalizedDescriptionKey: "Stream ended."]))
             return
         }
-        let muted = Store.micMuted, brk = Store.onBreak
-        lock.withLock { micMuted = muted; onBreak = brk }
+        let f = LiveFlags(micMuted: Store.micMuted, onBreak: Store.onBreak, gameMuted: Store.gameMuted,
+                          overlayHidden: Store.overlayHidden, zoomed: Store.zoomed, dataSaver: Store.dataSaver)
+        let (saverChanged, d0) = lock.withLock { () -> (Bool, Destination?) in
+            defer { live = f }
+            return (live.dataSaver != f.dataSaver, dest)
+        }
+        // Data saver halves the bitrate for weak connections.
+        if saverChanged, let d0, var v = await session?.stream.videoSettings {
+            v.bitRate = f.dataSaver ? d0.videoBitrate / 2 : d0.videoBitrate
+            try? await session?.stream.setVideoSettings(v)
+        }
         let p = Store.prefs
         let changed = lock.withLock { () -> Bool in
             defer { prefs = p }
@@ -112,7 +121,10 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     }
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
-        let (dest, prefs, micMuted, onBreak) = lock.withLock { (self.dest, self.prefs, self.micMuted, self.onBreak) }
+        let (dest0, prefs, f) = lock.withLock { (self.dest, self.prefs, self.live) }
+        var dest = dest0
+        if f.zoomed { dest?.screenZoom = min((dest?.screenZoom ?? 1) * 1.5, ScreenView.maxZoom) }
+        if f.overlayHidden { dest?.overlayFile = "" }
         switch sampleBufferType {
         case .video:
             guard let dest, let pixels = sampleBuffer.imageBuffer else { return }
@@ -120,7 +132,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
             let raw = (CMGetAttachment(sampleBuffer, key: RPVideoSampleOrientationKey as CFString,
                                        attachmentModeOut: nil) as? NSNumber)?.uint32Value
             let orientation = raw.flatMap { CGImagePropertyOrientation(rawValue: $0) } ?? .up
-            guard let frame = compositor.render(pixels, orientation: orientation, dest: dest, breakFile: onBreak ? prefs.breakFile : nil,
+            guard let frame = compositor.render(pixels, orientation: orientation, dest: dest, breakFile: f.onBreak ? prefs.breakFile : nil,
                                                 pts: sampleBuffer.presentationTimeStamp) else { return }
             if needVideoConfiguration {
                 needVideoConfiguration = false
@@ -137,17 +149,22 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
             }
             Task { await mixer.append(frame) }
         case .audioMic:
-            if prefs.audioSource != 1, !micMuted, sampleBuffer.dataReadiness == .ready {   // skip mic when "game only" or muted
+            if prefs.audioSource != 1, !f.micMuted, sampleBuffer.dataReadiness == .ready {   // skip mic when "game only" or muted
                 Task { await mixer.append(sampleBuffer, track: 0) }
             }
         case .audioApp:
-            if prefs.audioSource != 0, sampleBuffer.dataReadiness == .ready {   // skip app when "mic only"
+            if prefs.audioSource != 0, !f.gameMuted, sampleBuffer.dataReadiness == .ready {   // skip when "mic only" or muted
                 Task { await mixer.append(sampleBuffer, track: 1) }
             }
         @unknown default:
             break
         }
     }
+}
+
+/// Live Activity controls as last read from the app group.
+private struct LiveFlags {
+    var micMuted = false, onBreak = false, gameMuted = false, overlayHidden = false, zoomed = false, dataSaver = false
 }
 
 /// Places the screen and overlay on the stream canvas using the same ScreenView math as the editor.
