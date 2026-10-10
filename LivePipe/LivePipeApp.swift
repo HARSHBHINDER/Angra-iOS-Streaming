@@ -552,7 +552,14 @@ struct ChannelEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var d: Destination
 
-    private let resolutions = [(640, 360), (854, 480), (1280, 720), (1920, 1080)]
+    /// Only sizes the screen can fill: capture is never upscaled (no enhancers). Every iOS 17 device (A12+)
+    /// hardware-encodes H.264 and HEVC at 1080p60, so the screen is the only real limit.
+    private var resolutions: [(Int, Int)] {
+        let all = [(640, 360), (854, 480), (1280, 720), (1920, 1080)]
+        let short = Int(min(UIScreen.main.nativeBounds.width, UIScreen.main.nativeBounds.height))
+        let fit = all.filter { $0.1 <= short }
+        return fit.isEmpty ? [all[0]] : fit
+    }
     private let audioBitrates = [96_000, 128_000, 160_000, 192_000, 256_000]
     private let sampleRates = [44_100, 48_000]
     private let platforms = [("YouTube", "rtmps://a.rtmp.youtube.com/live2"), ("Twitch", "rtmp://live.twitch.tv/app"),
@@ -597,6 +604,9 @@ struct ChannelEditor: View {
                         get: { d.height },
                         set: { h in if let r = resolutions.first(where: { $0.1 == h }) { d.width = r.0; d.height = r.1 } })) {
                         ForEach(resolutions.map { $0.1 }, id: \.self) { Text("\($0)p").tag($0) }
+                    }
+                    .onAppear {   // a channel made on a bigger-screened device snaps to this phone's maximum
+                        if !resolutions.contains(where: { $0.1 == d.height }), let r = resolutions.last { d.width = r.0; d.height = r.1 }
                     }
                     Picker("Frame rate", selection: $d.fps) { Text("30 fps").tag(30); Text("60 fps").tag(60) }
                         .pickerStyle(.segmented)
