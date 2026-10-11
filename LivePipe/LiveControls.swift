@@ -1,6 +1,7 @@
 import ActivityKit
 import AppIntents
 import Foundation
+import WidgetKit
 
 /// iOS has no floating bubble over other apps, so the stream controls live in a Live Activity (Dynamic
 /// Island + Lock Screen). Buttons run these intents in the app process; they flip flags in the app group and
@@ -37,6 +38,7 @@ enum LiveControls {
     static func refresh() async {
         let state = StreamActivity.ContentState.current
         for a in Activity<StreamActivity>.activities { await a.update(ActivityContent(state: state, staleDate: nil)) }
+        WidgetCenter.shared.reloadAllTimelines()                    // Home Screen widgets show the same state
     }
 
     static func end() async {
@@ -184,6 +186,29 @@ struct MarkHighlightIntent: LiveActivityIntent {
         } else {
             try? Data(line.utf8).write(to: url)
         }
+        return .result()
+    }
+}
+
+/// Home Screen widget: make a channel the active one, right from the widget.
+struct SelectChannelIntent: AppIntent {
+    static let title: LocalizedStringResource = "Choose channel"
+    @Parameter(title: "Channel") var id: String
+    init() {}
+    init(id: String) { self.id = id }
+    func perform() async throws -> some IntentResult {
+        Store.activeId = id
+        return .result()
+    }
+}
+
+/// Home Screen widget: record the next broadcast on/off.
+struct ToggleRecordIntent: AppIntent {
+    static let title: LocalizedStringResource = "Record while streaming"
+    func perform() async throws -> some IntentResult {
+        var p = Store.prefs
+        p.recordWhileStreaming.toggle()
+        Store.prefs = p
         return .result()
     }
 }

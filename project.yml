@@ -20,6 +20,9 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         NSSupportsLiveActivities: true     # stream controls in the Dynamic Island / Lock Screen
+        CFBundleURLTypes:                  # angra://golive, angra://superchat from the Home Screen widgets
+          - CFBundleURLName: dev.livepipe.app
+            CFBundleURLSchemes: [angra]
     entitlements:
       path: LivePipe/LivePipe.entitlements
       properties:

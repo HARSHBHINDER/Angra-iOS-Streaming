@@ -1,6 +1,7 @@
 import PhotosUI
 import ReplayKit
 import SwiftUI
+import WidgetKit
 
 @main
 struct LivePipeApp: App {
@@ -53,6 +54,7 @@ struct PressScale: ButtonStyle {
 
 struct RootView: View {
     @State private var tab = 0
+    @Environment(\.scenePhase) private var phase
     var body: some View {
         TabView(selection: $tab) {
             StreamTab(tab: $tab).tag(0).tabItem { Label("Stream", systemImage: "dot.radiowaves.left.and.right") }
@@ -60,7 +62,28 @@ struct RootView: View {
             SettingsTab().tag(2).tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .tint(.ember)
+        // Home Screen widget links. Go Live opens the system broadcast picker (only the app may start a broadcast).
+        .onOpenURL { url in
+            switch url.host {
+            case "golive":
+                tab = Store.active == nil ? 1 : 0
+                if Store.active != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { BroadcastLauncher.shared.open() }
+                }
+            case "superchat":
+                tab = 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NotificationCenter.default.post(name: .openSuperChat, object: nil) }
+            default:
+                tab = 0
+            }
+        }
+        // Widgets show channels and settings; refresh them whenever the user leaves the app.
+        .onChange(of: phase) { _, p in if p == .background { WidgetCenter.shared.reloadAllTimelines() } }
     }
+}
+
+extension Notification.Name {
+    static let openSuperChat = Notification.Name("angra.openSuperChat")
 }
 
 // MARK: - Stream
@@ -210,7 +233,10 @@ struct StreamTab: View {
             .onAppear {
                 destinations = Store.destinations; activeId = Store.activeId; prefs = Store.prefs
                 if UIScreen.main.isCaptured, liveSince == nil { liveSince = Date() }
-                if !UIScreen.main.isCaptured { Task { await LiveControls.end() } }   // stream ended while away
+                if !UIScreen.main.isCaptured {                                      // stream ended while away
+                    Store.liveSince = 0
+                    Task { await LiveControls.end() }
+                }
             }
             .onChange(of: prefs) { _, new in Store.prefs = new }
             .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
@@ -219,6 +245,7 @@ struct StreamTab: View {
                 if liveSince != nil { LiveControls.start(channel: active?.name ?? "Live") }
                 else { Task { await LiveControls.end() } }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openSuperChat)) { _ in showSuperChat = true }
             .sheet(isPresented: $showSuperChat, onDismiss: { destinations = Store.destinations; prefs = Store.prefs }) {
                 SuperChatSheet()
             }

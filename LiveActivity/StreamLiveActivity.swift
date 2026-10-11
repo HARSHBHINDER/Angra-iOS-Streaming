@@ -5,7 +5,10 @@ import WidgetKit
 
 @main
 struct LiveActivityBundle: WidgetBundle {
-    var body: some Widget { StreamLiveActivity() }
+    var body: some Widget {
+        StreamLiveActivity()
+        StreamWidget()
+    }
 }
 
 /// The iOS "bubble": live timer plus Mute mic / Break / End in the Dynamic Island and on the Lock Screen.

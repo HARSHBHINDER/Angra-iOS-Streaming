@@ -180,6 +180,11 @@ enum Store {
         get { defaults.integer(forKey: "testAlertTier") }
         set { defaults.set(newValue, forKey: "testAlertTier") }
     }
+    /// When the broadcast started (seconds since 1970), 0 = not live. Written by the extension for the widgets.
+    static var liveSince: Double {
+        get { defaults.double(forKey: "liveSince") }
+        set { defaults.set(newValue, forKey: "liveSince") }
+    }
     static var stopRequested: Bool {
         get { defaults.bool(forKey: "stopRequested") }
         set { defaults.set(newValue, forKey: "stopRequested") }

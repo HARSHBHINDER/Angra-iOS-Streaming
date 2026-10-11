@@ -4,6 +4,7 @@ import ImageIO
 import ReplayKit
 import RTMPHaishinKit
 import VideoToolbox
+import WidgetKit
 
 /// Runs in the ReplayKit broadcast upload extension: a separate process with a ~50 MB memory ceiling.
 /// Every screen frame is composited onto the channel's real stream canvas (scene layout + overlay) by
@@ -46,6 +47,8 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
         Store.micMuted = false; Store.onBreak = false; Store.stopRequested = false
         Store.gameMuted = false; Store.overlayHidden = false; Store.dataSaver = false; Store.zoomed = false
         Store.superChatStatus = ""; Store.testAlertTier = 0
+        Store.liveSince = Date().timeIntervalSince1970
+        WidgetCenter.shared.reloadAllTimelines()
         if startPrefs.superChat, !startPrefs.ytApiKey.isEmpty, !dest.ytSource.isEmpty {
             let player = alerts
             chat = YouTubeChat(apiKey: startPrefs.ytApiKey, source: dest.ytSource,
@@ -83,6 +86,8 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
         reload?.cancel()
         chat?.stop(); chat = nil
         alerts.clear(); Store.superChatStatus = ""
+        Store.liveSince = 0
+        WidgetCenter.shared.reloadAllTimelines()
         Task {
             await mixer.stopRunning()
             try? await session?.close()
