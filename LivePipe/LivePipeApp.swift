@@ -75,6 +75,28 @@ struct EmberBackdrop: View {
     }
 }
 
+/// Live charging state: power source, battery level, thermal state, and how far the stream is easing.
+struct ChargingStatus: View {
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { _ in
+            let d = UIDevice.current
+            let s = Charging.now()
+            let level = d.batteryLevel < 0 ? "" : " · \(Int(d.batteryLevel * 100))%"
+            let thermal = ProcessInfo.processInfo.thermalState
+            let ease = UIScreen.main.isCaptured ? Store.chargeEase : 1
+            VStack(alignment: .leading, spacing: 4) {
+                LabeledContent(d.batteryState == .charging ? "Charging\(level)" : s.plugged ? "On power\(level)" : "On battery\(level)") {
+                    Text(thermal == .nominal ? "Cool" : thermal == .fair ? "Warm" : thermal == .serious ? "Hot" : "Very hot")
+                        .foregroundStyle(s.warm ? Color.red : .secondary)
+                }
+                if ease < 1 {
+                    Text("Stream eased to \(Int(ease * 100))% bitrate for charging").font(.footnote).foregroundStyle(Color.ember)
+                }
+            }
+        }
+    }
+}
+
 /// Theme grid in the iOS app-icon picker style: a mini app per theme, the chosen one ringed in its own tint.
 struct ThemePicker: View {
     @Binding var selected: String
@@ -1036,6 +1058,14 @@ struct SettingsTab: View {
                     }.pickerStyle(.segmented)
                 } header: { Text("Audio source") } footer: {
                     Text("Mic uses the iPhone microphone, or a connected Bluetooth, wired or USB mic.")
+                }
+                Section {
+                    Picker("Charging", selection: $prefs.charging) {
+                        ForEach(0..<3, id: \.self) { Text(Charging.names[$0]).tag($0) }
+                    }.pickerStyle(.segmented)
+                    ChargingStatus()
+                } header: { Text("Charging") } footer: {
+                    Text("Normal: the stream keeps full quality and the battery gets what's left. Medium: on the charger, when the iPhone runs warm, the stream eases to 60% bitrate so charging isn't slowed. Fast: on the charger the stream runs at 60% (35% when warm), leaving the most power for the battery. iOS doesn't let apps change the charger itself; the 80% limit is in Settings > Battery > Charging.")
                 }
                 Section {
                     Toggle("Adaptive bitrate", isOn: $prefs.adaptiveBitrate)
