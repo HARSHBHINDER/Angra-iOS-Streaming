@@ -2,10 +2,9 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-/// Home Screen (small / medium / large) and Lock Screen (circular / rectangular / inline) widgets.
-/// Patterns from what streaming and control apps ship: a status-first glance (Twitch, Twick), platform-tinted
-/// letter avatars for channels (Twick), clear on/off state for toggles (Elgato Control Center) and a size
-/// ladder where the small shows status + one action and the large adds a list (Spotify, YouTube Music).
+/// Home Screen (small / medium / large) and Lock Screen (circular / rectangular / inline) widgets, in the same
+/// language as the Android ones: a glance (platform avatar, status capsule, a big state line that becomes the live
+/// timer, one-line caption) and Shortcuts-style action tiles (icon top-left, label bottom-left; filled = on).
 /// Go Live opens the app (iOS only lets the app start a broadcast); End, Break, Mute, Record and channel
 /// switching work right on the widget.
 struct StreamWidget: Widget {
@@ -55,12 +54,13 @@ struct StreamProvider: TimelineProvider {
 }
 
 private let ember = Color(red: 0.95, green: 0.33, blue: 0.18)
-private let emberGrad = LinearGradient(colors: [Color(red: 1, green: 0.18, blue: 0.23), Color(red: 1, green: 0.54, blue: 0)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-private let onGrad = LinearGradient(colors: [Color(red: 1, green: 0.42, blue: 0.27), Color(red: 1, green: 0.18, blue: 0.33)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing)
-private let goldGrad = LinearGradient(colors: [Color(red: 1, green: 0.79, blue: 0.16), Color(red: 0.91, green: 0.12, blue: 0.39)],
-                                      startPoint: .topLeading, endPoint: .bottomTrailing)
+private func grad(_ a: Color, _ b: Color) -> AnyShapeStyle {
+    AnyShapeStyle(LinearGradient(colors: [a, b], startPoint: .topLeading, endPoint: .bottomTrailing))
+}
+private let goFill = grad(Color(red: 1, green: 0.18, blue: 0.23), Color(red: 1, green: 0.54, blue: 0))
+private let endFill = grad(Color(red: 1, green: 0.27, blue: 0.23), Color(red: 0.84, green: 0, blue: 0.08))
+private let onFill = grad(Color(red: 1, green: 0.42, blue: 0.27), Color(red: 1, green: 0.18, blue: 0.33))
+private let scFill = grad(Color(red: 1, green: 0.76, blue: 0.2), Color(red: 0.94, green: 0.21, blue: 0.42))
 
 private func platform(_ url: String) -> (name: String, colors: [Color]) {
     if url.contains("youtube") { return ("YouTube", [Color(red: 1, green: 0, blue: 0.2), Color(red: 0.8, green: 0, blue: 0)]) }
@@ -94,17 +94,16 @@ struct StreamWidgetView: View {
         }
     }
 
+    /// Apple's widget surface (systemBackground over secondary) with one soft ember light in the corner.
     @ViewBuilder private var background: some View {
         switch family {
         case .systemSmall, .systemMedium, .systemLarge:
             ZStack {
-                LinearGradient(colors: scheme == .dark ? [Color(white: 0.12), Color(white: 0.05)]
-                                                       : [Color.white, Color(red: 0.965, green: 0.94, blue: 0.925)],
+                LinearGradient(colors: scheme == .dark ? [Color(red: 0.11, green: 0.11, blue: 0.12), Color(red: 0.06, green: 0.06, blue: 0.07)]
+                                                       : [Color.white, Color(red: 0.95, green: 0.95, blue: 0.97)],
                                startPoint: .top, endPoint: .bottom)
-                RadialGradient(colors: [Color(red: 1, green: 0.18, blue: 0.23).opacity(scheme == .dark ? 0.35 : 0.18), Color.clear],
-                               center: .topTrailing, startRadius: 0, endRadius: 260)
-                RadialGradient(colors: [Color(red: 1, green: 0.54, blue: 0).opacity(scheme == .dark ? 0.15 : 0.10), Color.clear],
-                               center: .bottomLeading, startRadius: 0, endRadius: 200)
+                RadialGradient(colors: [Color(red: 1, green: 0.18, blue: 0.23).opacity(scheme == .dark ? 0.28 : 0.14), Color.clear],
+                               center: .topTrailing, startRadius: 0, endRadius: 240)
             }
         default:
             Color.clear
@@ -113,81 +112,66 @@ struct StreamWidgetView: View {
 
     // MARK: Home Screen
 
-    /// Small: status + channel + one action (Go Live opens the app; while live, End works right here).
+    /// Small: the glance. One tap target (iOS small widgets): Go Live, or open the app while live.
     private var small: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack { mark; Spacer(); statusPill }
-            Spacer(minLength: 6)
-            channelLine(avatarSize: 28, nameSize: 14)
-            if let s = e.liveSince {
-                Text(timerInterval: s...Date.distantFuture, countsDown: false)
-                    .font(.system(size: 22, weight: .bold, design: .rounded)).monospacedDigit().padding(.top, 4)
-            }
-            Spacer(minLength: 6)
-            if live {
-                Button(intent: EndStreamIntent()) { pill("stop.fill", "End", height: 34, fill: AnyShapeStyle(Color.red)) }.buttonStyle(.plain)
-            } else {
-                pill("play.fill", e.active == nil ? "Set up" : "Go Live", height: 34, fill: AnyShapeStyle(emberGrad))
-            }
+            HStack(alignment: .top) { activeAvatar(40); Spacer(minLength: 4); statusPill }
+            Spacer(minLength: 0)
+            stateLine(26)
+            caption.padding(.top, 2)
         }
         .widgetURL(live ? openApp : goLive)
     }
 
-    /// Medium: the glance on the left, the four controls on the right.
+    /// Medium: the glance on the left, a 2x2 grid of actions on the right.
     private var medium: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) { mark; statusPill }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) { activeAvatar(36); Spacer(minLength: 4); statusPill }
                 Spacer(minLength: 0)
-                channelLine(avatarSize: 34, nameSize: 15)
-                if let s = e.liveSince {
-                    Text(timerInterval: s...Date.distantFuture, countsDown: false)
-                        .font(.system(size: 18, weight: .bold, design: .rounded)).monospacedDigit()
-                }
+                stateLine(22)
+                caption.padding(.top, 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Grid(horizontalSpacing: 8, verticalSpacing: 8) {
-                GridRow { goTile; liveControl(ToggleBreakIntent(), e.onBreak ? "play.fill" : "pause.fill", e.onBreak ? "Resume" : "Break", on: e.onBreak, wide: false) }
-                GridRow {
-                    liveControl(ToggleMicIntent(), e.micMuted ? "mic.slash.fill" : "mic.fill", e.micMuted ? "Unmute" : "Mute", on: e.micMuted, wide: false)
-                    Link(destination: superChat) { tile("dollarsign", "Super Chat", fill: AnyShapeStyle(goldGrad)) }
-                }
+                GridRow { goTile; breakTile }
+                GridRow { muteTile; superChatTile }
             }
+            .frame(maxWidth: .infinity)
         }
         .widgetURL(openApp)
     }
 
-    /// Large: header, channel switcher, toggles, primary action.
+    /// Large: glance + primary action, the channel list (iOS list rhythm), four actions.
     private var large: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 8) {
-                mark
-                Text("Angra Streaming").font(.system(size: 15, weight: .bold)).lineLimit(1)
-                Spacer()
-                statusPill
-                if let s = e.liveSince {
-                    Text(timerInterval: s...Date.distantFuture, countsDown: false)
-                        .font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(maxWidth: 60, alignment: .trailing)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                activeAvatar(44)
+                VStack(alignment: .leading, spacing: 2) { stateLine(22); caption.lineLimit(1) }
+                Spacer(minLength: 8)
+                primaryCapsule
             }
-            Text("CHANNELS").font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(.secondary).padding(.top, 2)
+            Text("CHANNELS").font(.system(size: 11, weight: .bold)).tracking(0.7).foregroundStyle(.secondary)
+                .padding(.top, 16).padding(.bottom, 2)
             if e.channels.isEmpty {
-                Text("Add your first channel in the app to go live from here.").font(.footnote).foregroundStyle(.secondary)
+                Text("Add your first channel in the app to go live from here.").font(.footnote).foregroundStyle(.secondary).padding(.top, 6)
             }
-            ForEach(Array(e.channels.prefix(3)), id: \.id) { d in channelRow(d) }
-            Spacer(minLength: 0)
+            ForEach(Array(e.channels.prefix(3).enumerated()), id: \.element.id) { i, d in
+                if i > 0 { Divider().padding(.leading, 42) }
+                channelRow(d)
+            }
+            Spacer(minLength: 12)
             HStack(spacing: 8) {
-                Button(intent: ToggleRecordIntent()) { tile("record.circle", "Record", on: e.record, wide: true) }.buttonStyle(.plain)
-                liveControl(ToggleBreakIntent(), e.onBreak ? "play.fill" : "pause.fill", e.onBreak ? "Resume" : "Break", on: e.onBreak, wide: true)
-                liveControl(ToggleMicIntent(), e.micMuted ? "mic.slash.fill" : "mic.fill", e.micMuted ? "Unmute" : "Mute", on: e.micMuted, wide: true)
-                Link(destination: superChat) { tile("dollarsign", "Super Chat", fill: AnyShapeStyle(goldGrad), wide: true) }
+                Button(intent: ToggleRecordIntent()) {
+                    tile("record.circle", e.record ? "Recording" : "Record", fill: e.record ? endFill : nil)
+                }.buttonStyle(.plain)
+                breakTile
+                muteTile
+                superChatTile
             }
-            if live {
-                Button(intent: EndStreamIntent()) { pill("stop.fill", "End stream", height: 42, fill: AnyShapeStyle(Color.red)) }.buttonStyle(.plain)
-            } else {
-                Link(destination: goLive) { pill("play.fill", e.active == nil ? "Set up" : "Go Live", height: 42, fill: AnyShapeStyle(emberGrad)) }
-            }
+            .frame(height: 68)
         }
+        .widgetURL(openApp)
     }
 
     // MARK: Lock Screen
@@ -232,98 +216,121 @@ struct StreamWidgetView: View {
 
     // MARK: Pieces
 
-    private var mark: some View {
-        Image(systemName: "dot.radiowaves.left.and.right")
-            .font(.system(size: 10, weight: .bold)).foregroundStyle(Color.white)
-            .frame(width: 22, height: 22)
-            .background(emberGrad, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
     private var statusPill: some View {
         Text(live ? "● LIVE" : e.active == nil ? "SET UP" : "READY")
-            .font(.system(size: 10, weight: .bold)).tracking(0.8).lineLimit(1)
+            .font(.system(size: 10, weight: .bold)).tracking(0.6).lineLimit(1)
             .foregroundStyle(live ? Color.white : Color.primary)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(live ? AnyShapeStyle(Color.red) : AnyShapeStyle(Color.primary.opacity(0.1)), in: Capsule())
     }
 
+    /// Big state line, the Live Activity hierarchy: "Ready" / "Set up", or the running timer while live.
+    private func stateLine(_ size: CGFloat) -> some View {
+        Group {
+            if let s = e.liveSince {
+                Text(timerInterval: s...Date.distantFuture, countsDown: false).monospacedDigit()
+            } else {
+                Text(e.active == nil ? "Set up" : "Ready")
+            }
+        }
+        .font(.system(size: size, weight: .bold)).tracking(-0.4).lineLimit(1).minimumScaleFactor(0.6)
+    }
+
+    private var caption: some View {
+        Text(e.active.map { live ? "\($0.name) · \(platform($0.url).name)" : "\($0.name) · \($0.height)p\($0.fps)" }
+             ?? "Add a channel to go live")
+            .font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+    }
+
+    @ViewBuilder private func activeAvatar(_ size: CGFloat) -> some View {
+        if let a = e.active {
+            avatar(a, size)
+        } else {
+            Image(systemName: "plus").font(.system(size: size * 0.4, weight: .bold)).foregroundStyle(Color.white)
+                .frame(width: size, height: size).background(goFill, in: Circle())
+        }
+    }
+
+    /// Letter avatar tinted with the channel's platform colour (the Twick / Twitch widget pattern).
     private func avatar(_ d: Destination, _ size: CGFloat) -> some View {
         let p = platform(d.url)
         return Text(String(d.name.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
-            .font(.system(size: size * 0.45, weight: .bold))
+            .font(.system(size: size * 0.43, weight: .bold))
             .foregroundStyle(p.name == "Kick" ? Color.black : Color.white)
             .frame(width: size, height: size)
             .background(LinearGradient(colors: p.colors, startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
     }
 
-    @ViewBuilder private func channelLine(avatarSize: CGFloat, nameSize: CGFloat) -> some View {
-        if let a = e.active {
-            HStack(spacing: 8) {
-                avatar(a, avatarSize)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(a.name).font(.system(size: nameSize, weight: .semibold)).lineLimit(1)
-                    Text(live ? platform(a.url).name : "\(platform(a.url).name) · \(a.height)p\(a.fps)")
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("No channel yet").font(.system(size: nameSize, weight: .semibold))
-                Text("Add one in the app").font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private func channelRow(_ d: Destination) -> some View {
-        let on = d.id == e.active?.id
-        return Button(intent: SelectChannelIntent(id: d.id)) {
-            HStack(spacing: 10) {
-                avatar(d, 26)
-                Text((d.pinned ? "★ " : "") + d.name).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+        Button(intent: SelectChannelIntent(id: d.id)) {
+            HStack(spacing: 12) {
+                avatar(d, 30)
+                Text((d.pinned ? "★ " : "") + d.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
                 Spacer(minLength: 4)
-                Text(platform(d.url).name).font(.caption2).foregroundStyle(.secondary)
-                if on { Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(ember) }
+                Text(platform(d.url).name).font(.caption).foregroundStyle(.secondary)
+                Image(systemName: "checkmark").font(.system(size: 14, weight: .bold)).foregroundStyle(ember)
+                    .frame(width: 18).opacity(d.id == e.active?.id ? 1 : 0)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 38)
-            .background(on ? ember.opacity(0.15) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(on ? ember : Color.clear, lineWidth: 1.5))
+            .frame(height: 46)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(live)                     // the channel can't change mid-broadcast
     }
 
-    private func pill(_ symbol: String, _ title: String, height: CGFloat, fill: AnyShapeStyle) -> some View {
-        Label(title, systemImage: symbol)
-            .font(.system(size: 15, weight: .bold)).foregroundStyle(Color.white).lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: height)
-            .background(fill, in: Capsule())
+    private var capsuleLabel: some View {
+        Text(live ? "End" : e.active == nil ? "Set up" : "Go Live")
+            .font(.system(size: 14, weight: .bold)).foregroundStyle(Color.white).lineLimit(1)
+            .padding(.horizontal, 14).frame(height: 34)
+            .background(live ? AnyShapeStyle(Color.red) : goFill, in: Capsule())
     }
 
-    /// A control square: glass when off, ember-to-pink when on, a solid fill for actions.
-    private func tile(_ symbol: String, _ label: String, on: Bool = false, fill: AnyShapeStyle? = nil, wide: Bool = false) -> some View {
-        VStack(spacing: 3) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
-            Text(label).font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+    @ViewBuilder private var primaryCapsule: some View {
+        if live {
+            Button(intent: EndStreamIntent()) { capsuleLabel }.buttonStyle(.plain)
+        } else {
+            Link(destination: goLive) { capsuleLabel }
         }
-        .foregroundStyle(on || fill != nil ? Color.white : Color.primary)
-        .frame(width: wide ? nil : 60, height: 54)
-        .frame(maxWidth: wide ? .infinity : nil)
-        .background(fill ?? (on ? AnyShapeStyle(onGrad) : AnyShapeStyle(Color.primary.opacity(0.08))),
+    }
+
+    /// Shortcuts-style action: icon top-left, label bottom-left. Filled when on / a primary action, glass when off.
+    private func tile(_ symbol: String, _ label: String, on: Bool = false, fill: AnyShapeStyle? = nil) -> some View {
+        let lit = on || fill != nil
+        return VStack(alignment: .leading, spacing: 0) {
+            Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
+            Spacer(minLength: 4)
+            Text(label).font(.system(size: 12, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .foregroundStyle(lit ? Color.white : Color.primary)
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(fill ?? (on ? onFill : AnyShapeStyle(Color.primary.opacity(0.08))),
                     in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     @ViewBuilder private var goTile: some View {
         if live {
-            Button(intent: EndStreamIntent()) { tile("stop.fill", "End", fill: AnyShapeStyle(Color.red)) }.buttonStyle(.plain)
+            Button(intent: EndStreamIntent()) { tile("stop.fill", "End", fill: endFill) }.buttonStyle(.plain)
         } else {
-            Link(destination: goLive) { tile("play.fill", e.active == nil ? "Set up" : "Go Live", fill: AnyShapeStyle(emberGrad)) }
+            Link(destination: goLive) { tile("play.fill", e.active == nil ? "Set up" : "Go Live", fill: goFill) }
         }
     }
 
+    private var breakTile: some View {
+        liveControl(ToggleBreakIntent(), "pause.fill", e.onBreak ? "On break" : "Break", on: e.onBreak)
+    }
+
+    private var muteTile: some View {
+        liveControl(ToggleMicIntent(), e.micMuted ? "mic.slash.fill" : "mic.fill", e.micMuted ? "Muted" : "Mute", on: e.micMuted)
+    }
+
+    private var superChatTile: some View {
+        Link(destination: superChat) { tile("dollarsign", "Super Chat", fill: scFill) }
+    }
+
     /// Break and mute only act on a running broadcast; dimmed otherwise.
-    private func liveControl(_ intent: some AppIntent, _ symbol: String, _ label: String, on: Bool, wide: Bool) -> some View {
-        Button(intent: intent) { tile(symbol, label, on: on, wide: wide) }
+    private func liveControl(_ intent: some AppIntent, _ symbol: String, _ label: String, on: Bool) -> some View {
+        Button(intent: intent) { tile(symbol, label, on: on) }
             .buttonStyle(.plain)
             .disabled(!live)
             .opacity(live || on ? 1 : 0.45)

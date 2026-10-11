@@ -77,6 +77,7 @@ struct Prefs: Codable, Equatable {
     var alertStyle = 0           // SuperChatCard.styles index
     var alertSeconds = 8
     var alertShowTotal = true    // add the supporter's running total this stream
+    var theme = "original"       // Theme.all id
     // Recording reuses the active channel's resolution/bitrate (single encoder). No floating bubble on
     // iOS: the OS has no cross-app overlay — status shows via the OS indicator (Live Activity planned).
     static let audioMic = 0, audioGame = 1, audioMix = 2
@@ -95,6 +96,7 @@ extension Prefs {
         superChat = v(.superChat, d.superChat); ytApiKey = v(.ytApiKey, d.ytApiKey)
         alertStyle = v(.alertStyle, d.alertStyle); alertSeconds = v(.alertSeconds, d.alertSeconds)
         alertShowTotal = v(.alertShowTotal, d.alertShowTotal)
+        theme = v(.theme, d.theme)
     }
 }
 

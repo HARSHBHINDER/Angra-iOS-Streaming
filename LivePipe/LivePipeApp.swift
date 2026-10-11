@@ -10,26 +10,107 @@ struct LivePipeApp: App {
 
 // MARK: - Brand
 
-/// Angra ember: the oni icon's flame, used as the app tint and for the Go Live gradient.
-extension Color {
-    static let ember = Color(red: 0.95, green: 0.33, blue: 0.18)
-}
-let emberGradient = LinearGradient(colors: [Color(red: 1, green: 0.18, blue: 0.23), Color(red: 1, green: 0.54, blue: 0)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+/// One app theme: Apple's grouped structure stays, a theme swaps the background, tint, button gradient and the two
+/// glow lights. dark = nil follows the system (Original). Same ids and colours as Android's Palettes.
+struct Theme: Identifiable, Equatable {
+    let id, name: String
+    let dark: Bool?
+    let bg, card, accent: UInt32
+    let brush, glow: [UInt32]
 
-/// Grouped background with a soft ember glow behind the large title — the app's signature.
+    /// Tron Legacy = ggsci pal_tron("legacy"); Cyberpunk = CDPR acid yellow, red, turquoise; Nord = nordtheme.com.
+    static let all: [Theme] = [
+        Theme(id: "matte", name: "Matte Black", dark: true, bg: 0xFF000000, card: 0xFF111111, accent: 0xFFA1A1A6, brush: [0xFF4A4A4E, 0xFF242426], glow: [0x14FFFFFF, 0x00000000]),
+        Theme(id: "white", name: "White", dark: false, bg: 0xFFFFFFFF, card: 0xFFF5F5F7, accent: 0xFF1D1D1F, brush: [0xFF3A3A3C, 0xFF1D1D1F], glow: [0x00000000, 0x00000000]),
+        Theme(id: "original", name: "Original", dark: nil, bg: 0xFF000000, card: 0xFF1C1C1E, accent: 0xFFF2542D, brush: [0xFFFF2D3A, 0xFFFF8A00], glow: [0xFFFF3B30, 0xFFFF8A00]),
+        Theme(id: "tron", name: "Tron Legacy", dark: true, bg: 0xFF02070B, card: 0xFF0A161D, accent: 0xFF6EE2FF, brush: [0xFFF79D1E, 0xFFFF410D], glow: [0xFF6EE2FF, 0xFFF79D1E]),
+        Theme(id: "cyberpunk", name: "Cyberpunk", dark: true, bg: 0xFF0B0A0F, card: 0xFF16141C, accent: 0xFFFCEE0A, brush: [0xFFFF003C, 0xFFB8002B], glow: [0xFFFCEE0A, 0xFF00F0FF]),
+        Theme(id: "whiteninja", name: "White Ninja", dark: false, bg: 0xFFF6F3EC, card: 0xFFFFFFFF, accent: 0xFFB3001B, brush: [0xFFD7263D, 0xFF8B0011], glow: [0xFFD7263D, 0x00000000]),
+        Theme(id: "blackninja", name: "Black Ninja", dark: true, bg: 0xFF050505, card: 0xFF121212, accent: 0xFFE01E37, brush: [0xFFE01E37, 0xFF6A040F], glow: [0xFF9D0208, 0x00000000]),
+        Theme(id: "synthwave", name: "Synthwave", dark: true, bg: 0xFF150A26, card: 0xFF22123B, accent: 0xFFFF4F9A, brush: [0xFFFF4F9A, 0xFFFF9E3D], glow: [0xFFFF4F9A, 0xFF7B2FF7]),
+        Theme(id: "aurora", name: "Aurora", dark: true, bg: 0xFF040A16, card: 0xFF0C1729, accent: 0xFF3DDC97, brush: [0xFF3DDC97, 0xFF2B8FED], glow: [0xFF3DDC97, 0xFF7F5AF0]),
+        Theme(id: "glass", name: "Liquid Glass", dark: false, bg: 0xFFEAF1F8, card: 0xFFF9FBFE, accent: 0xFF007AFF, brush: [0xFF5AC8FA, 0xFF007AFF], glow: [0xFF5AC8FA, 0xFFBF5AF2]),
+        Theme(id: "ocean", name: "Deep Ocean", dark: true, bg: 0xFF03111C, card: 0xFF0A2031, accent: 0xFF22C3E6, brush: [0xFF48CAE4, 0xFF0077B6], glow: [0xFF0096C7, 0xFF00B4D8]),
+        Theme(id: "sakura", name: "Sakura", dark: false, bg: 0xFFFFF4F6, card: 0xFFFFFFFF, accent: 0xFFE0457B, brush: [0xFFFF8FAB, 0xFFE0457B], glow: [0xFFFF8FAB, 0xFFFFC2D1]),
+        Theme(id: "matrix", name: "Matrix", dark: true, bg: 0xFF000400, card: 0xFF051208, accent: 0xFF00E676, brush: [0xFF1DB954, 0xFF0A6E2A], glow: [0xFF00FF41, 0x00000000]),
+        Theme(id: "vaporwave", name: "Vaporwave", dark: true, bg: 0xFF1C1033, card: 0xFF281845, accent: 0xFF01CDFE, brush: [0xFFFF71CE, 0xFFB967FF], glow: [0xFFFF71CE, 0xFF01CDFE]),
+        Theme(id: "gold", name: "Gold Luxe", dark: true, bg: 0xFF0B0906, card: 0xFF17140D, accent: 0xFFD4AF37, brush: [0xFFE6C55A, 0xFFA87B12], glow: [0xFFD4AF37, 0x00000000]),
+        Theme(id: "nord", name: "Nord", dark: true, bg: 0xFF2E3440, card: 0xFF3B4252, accent: 0xFF88C0D0, brush: [0xFF81A1C1, 0xFF5E81AC], glow: [0xFF88C0D0, 0xFFB48EAD]),
+        Theme(id: "dune", name: "Dune", dark: false, bg: 0xFFF2E8DA, card: 0xFFFFF9F0, accent: 0xFFC2410C, brush: [0xFFF59E0B, 0xFFC2410C], glow: [0xFFF59E0B, 0xFFC2410C]),
+        Theme(id: "ultraviolet", name: "Ultraviolet", dark: true, bg: 0xFF0B0515, card: 0xFF170B2A, accent: 0xFFB57BFF, brush: [0xFFA855F7, 0xFF6D28D9], glow: [0xFFA855F7, 0xFF3B82F6]),
+        Theme(id: "titanium", name: "Titanium", dark: false, bg: 0xFFE4E4E1, card: 0xFFF4F4F2, accent: 0xFF55555A, brush: [0xFF8E8E93, 0xFF48484A], glow: [0x00000000, 0x00000000]),
+        Theme(id: "hologram", name: "Hologram", dark: false, bg: 0xFFF3F0FF, card: 0xFFFFFFFF, accent: 0xFF7C5CFF, brush: [0xFFFF7AD9, 0xFF7C5CFF, 0xFF3DE1FF], glow: [0xFFFF7AD9, 0xFF3DE1FF]),
+    ]
+    static func byId(_ id: String) -> Theme { all.first { $0.id == id } ?? all[2] }
+    /// Cached so view bodies don't decode prefs on every access; set by the Settings picker.
+    static var current = byId(Store.prefs.theme)
+    var scheme: ColorScheme? { dark.map { $0 ? .dark : .light } }
+}
+
+extension Color {
+    init(argb: UInt32) {
+        self.init(.sRGB, red: Double(argb >> 16 & 0xFF) / 255, green: Double(argb >> 8 & 0xFF) / 255,
+                  blue: Double(argb & 0xFF) / 255, opacity: Double(argb >> 24) / 255)
+    }
+    /// The theme tint (Original: Angra ember, the oni icon's flame).
+    static var ember: Color { Color(argb: Theme.current.accent) }
+}
+var emberGradient: LinearGradient {
+    LinearGradient(colors: Theme.current.brush.map(Color.init(argb:)), startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+/// Grouped background with the theme's two glows behind the large title — the app's signature.
 struct EmberBackdrop: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
-        let dark = scheme == .dark
+        let dark = scheme == .dark, t = Theme.current
+        let g = t.glow.map(Color.init(argb:))
         ZStack {
-            Color(.systemGroupedBackground)
-            RadialGradient(colors: [Color(red: 1, green: 0.23, blue: 0.19).opacity(dark ? 0.42 : 0.20), .clear],
-                           center: .topTrailing, startRadius: 0, endRadius: 520)
-            RadialGradient(colors: [Color(red: 1, green: 0.54, blue: 0).opacity(dark ? 0.22 : 0.12), .clear],
+            if t.dark == nil { Color(.systemGroupedBackground) } else { Color(argb: t.bg) }
+            RadialGradient(colors: [g[0].opacity(dark ? 0.42 : 0.20), .clear], center: .topTrailing, startRadius: 0, endRadius: 520)
+            RadialGradient(colors: [g[1].opacity(dark ? 0.22 : 0.12), .clear],
                            center: UnitPoint(x: 0, y: 0.12), startRadius: 0, endRadius: 360)
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Theme grid in the iOS app-icon picker style: a mini app per theme, the chosen one ringed in its own tint.
+struct ThemePicker: View {
+    @Binding var selected: String
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 14) {
+            ForEach(Theme.all) { t in
+                let on = t.id == selected
+                let card = Color(argb: t.dark == nil ? 0xFF1C1C1E : t.card)
+                Button { selected = t.id } label: {
+                    VStack(spacing: 6) {
+                        ZStack(alignment: .bottom) {
+                            Color(argb: t.bg)
+                            RadialGradient(colors: [Color(argb: t.glow[0]).opacity(0.55), .clear], center: .topTrailing, startRadius: 0, endRadius: 90)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Capsule().fill(t.dark == false ? Color.black : Color.white).frame(width: 30, height: 6)
+                                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(card).frame(height: 18)
+                                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(card).frame(height: 10)
+                                Spacer(minLength: 0)
+                                Capsule().fill(LinearGradient(colors: t.brush.map(Color.init(argb:)), startPoint: .leading, endPoint: .trailing))
+                                    .frame(height: 14)
+                            }
+                            .padding(8)
+                        }
+                        .aspectRatio(0.72, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: on ? 12 : 16, style: .continuous))
+                        .padding(on ? 4 : 0)
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(on ? Color(argb: t.accent) : Color(.separator), lineWidth: on ? 2.5 : 0.5))
+                        Text(t.name).font(.caption.weight(on ? .semibold : .regular)).lineLimit(1).minimumScaleFactor(0.8)
+                            .foregroundStyle(on ? Color(argb: t.accent) : .primary)
+                    }
+                }
+                .buttonStyle(PressScale())
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 
@@ -54,6 +135,7 @@ struct PressScale: ButtonStyle {
 
 struct RootView: View {
     @State private var tab = 0
+    @State private var themeId = Theme.current.id
     @Environment(\.scenePhase) private var phase
     var body: some View {
         TabView(selection: $tab) {
@@ -62,6 +144,9 @@ struct RootView: View {
             SettingsTab().tag(2).tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .tint(.ember)
+        .id(themeId)                                     // a new theme rebuilds every screen with its colours
+        .preferredColorScheme(Theme.current.scheme)
+        .onReceive(NotificationCenter.default.publisher(for: .themeChanged)) { _ in themeId = Theme.current.id }
         // Home Screen widget links. Go Live opens the system broadcast picker (only the app may start a broadcast).
         .onOpenURL { url in
             switch url.host {
@@ -84,6 +169,7 @@ struct RootView: View {
 
 extension Notification.Name {
     static let openSuperChat = Notification.Name("angra.openSuperChat")
+    static let themeChanged = Notification.Name("angra.themeChanged")
 }
 
 // MARK: - Stream
@@ -942,6 +1028,9 @@ struct SettingsTab: View {
         NavigationStack {
             Form {
                 Section {
+                    ThemePicker(selected: $prefs.theme)
+                } header: { Text("Theme · \(Theme.byId(prefs.theme).name)") }
+                Section {
                     Picker("Capture", selection: $prefs.audioSource) {
                         Text("Mic").tag(0); Text("Game").tag(1); Text("Both").tag(2)
                     }.pickerStyle(.segmented)
@@ -977,6 +1066,10 @@ struct SettingsTab: View {
             .navigationTitle("Settings")
             .onAppear { prefs = Store.prefs }
             .onChange(of: prefs) { _, new in Store.prefs = new }
+            .onChange(of: prefs.theme) { _, id in
+                Theme.current = Theme.byId(id)
+                NotificationCenter.default.post(name: .themeChanged, object: nil)
+            }
         }
     }
 
