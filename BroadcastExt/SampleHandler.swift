@@ -18,6 +18,8 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     private var dest: Destination?
     private var prefs = Prefs()
     private var live = LiveFlags()      // live controls from the Live Activity
+    private let alerts = AlertPlayer()  // Super Chat cards
+    private var chat: YouTubeChat?
     private var reload: Task<Void, Never>?
 
     /// Reads the active channel straight from the shared group so the extension needs no app-only code.
@@ -43,6 +45,12 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
         let startPrefs = Store.prefs
         Store.micMuted = false; Store.onBreak = false; Store.stopRequested = false
         Store.gameMuted = false; Store.overlayHidden = false; Store.dataSaver = false; Store.zoomed = false
+        Store.superChatStatus = ""; Store.testAlertTier = 0
+        if startPrefs.superChat, !startPrefs.ytApiKey.isEmpty, !dest.ytSource.isEmpty {
+            let player = alerts
+            chat = YouTubeChat(apiKey: startPrefs.ytApiKey, source: dest.ytSource,
+                               onEvent: { player.enqueue($0) }, onStatus: { Store.superChatStatus = $0 })
+        }
         lock.withLock { self.dest = dest; self.prefs = startPrefs }
         Task {
             do {
@@ -73,6 +81,8 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
 
     override func broadcastFinished() {
         reload?.cancel()
+        chat?.stop(); chat = nil
+        alerts.clear(); Store.superChatStatus = ""
         Task {
             await mixer.stopRunning()
             try? await session?.close()
@@ -87,6 +97,8 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
                                              userInfo: [NSLocalizedDescriptionKey: "Stream ended."]))
             return
         }
+        let test = Store.testAlertTier
+        if test > 0 { Store.testAlertTier = 0; alerts.enqueue(.sample(tier: test)) }
         let f = LiveFlags(micMuted: Store.micMuted, onBreak: Store.onBreak, gameMuted: Store.gameMuted,
                           overlayHidden: Store.overlayHidden, zoomed: Store.zoomed, dataSaver: Store.dataSaver)
         let (saverChanged, d0) = lock.withLock { () -> (Bool, Destination?) in
@@ -133,6 +145,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
                                        attachmentModeOut: nil) as? NSNumber)?.uint32Value
             let orientation = raw.flatMap { CGImagePropertyOrientation(rawValue: $0) } ?? .up
             guard let frame = compositor.render(pixels, orientation: orientation, dest: dest, breakFile: f.onBreak ? prefs.breakFile : nil,
+                                                alert: alerts.frame(at: sampleBuffer.presentationTimeStamp.seconds, prefs: prefs),
                                                 pts: sampleBuffer.presentationTimeStamp) else { return }
             if needVideoConfiguration {
                 needVideoConfiguration = false
@@ -162,6 +175,37 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     }
 }
 
+/// Super Chat cards, one at a time, timed off the video frames: rise and fade in, hold, fade out, short gap.
+private final class AlertPlayer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var queue: [SuperChat] = []
+    private var current: CIImage?
+    private var start = 0.0
+    private var hold = 8.0
+    private static let fadeIn = 0.42, fadeOut = 0.32, gap = 0.45
+
+    func enqueue(_ e: SuperChat) { lock.withLock { queue.append(e) } }
+    func clear() { lock.withLock { queue.removeAll(); current = nil } }
+
+    func frame(at t: Double, prefs: Prefs) -> (image: CIImage, alpha: Double)? {
+        lock.lock(); defer { lock.unlock() }
+        if current != nil, t - start > Self.fadeIn + hold + Self.fadeOut + Self.gap { current = nil }
+        if current == nil {
+            guard !queue.isEmpty else { return nil }
+            let e = queue.removeFirst()
+            current = SuperChatCard.render(e, style: prefs.alertStyle, showTotal: prefs.alertShowTotal).cgImage.map { CIImage(cgImage: $0) }
+            start = t; hold = Double(prefs.alertSeconds)
+        }
+        guard let img = current else { return nil }
+        let dt = t - start
+        let a: Double
+        if dt < Self.fadeIn { a = 1 - pow(1 - dt / Self.fadeIn, 3) }
+        else if dt < Self.fadeIn + hold { a = 1 }
+        else { a = max(0, 1 - (dt - Self.fadeIn - hold) / Self.fadeOut) }
+        return a > 0 ? (img, a) : nil
+    }
+}
+
 /// Live Activity controls as last read from the app group.
 private struct LiveFlags {
     var micMuted = false, onBreak = false, gameMuted = false, overlayHidden = false, zoomed = false, dataSaver = false
@@ -179,7 +223,7 @@ private final class Compositor {
     /// `breakFile` non-nil = break screen: black (no branding), or that image fitted on black. The screen is
     /// skipped entirely, so a break costs less than streaming.
     func render(_ src: CVPixelBuffer, orientation: CGImagePropertyOrientation, dest: Destination, breakFile: String?,
-                pts: CMTime) -> CMSampleBuffer? {
+                alert: (image: CIImage, alpha: Double)? = nil, pts: CMTime) -> CMSampleBuffer? {
         let size = dest.canvas
         let W = size.width, H = size.height
         if poolSize != size { pool = Self.makePool(size); poolSize = size }
@@ -218,6 +262,17 @@ private final class Compositor {
                     .transformed(by: CGAffineTransform(translationX: dest.overlayX * W - ow / 2, y: H - (dest.overlayY * H + oh / 2)))
                 out = placed.composited(over: out)
             }
+        }
+        // Super Chat card on top of everything: rises into place as it fades in.
+        if let alert, alert.alpha > 0, alert.image.extent.width > 0 {
+            let img = alert.image
+            let aw = dest.alertW * W, ah = aw * img.extent.height / img.extent.width
+            let rise = (1 - alert.alpha) * 0.04 * H
+            let placed = img.transformed(by: CGAffineTransform(translationX: -img.extent.minX, y: -img.extent.minY))
+                .transformed(by: CGAffineTransform(scaleX: aw / img.extent.width, y: ah / img.extent.height))
+                .transformed(by: CGAffineTransform(translationX: dest.alertX * W - aw / 2, y: H - (dest.alertY * H + ah / 2) - rise))
+                .applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: alert.alpha)])
+            out = placed.composited(over: out)
         }
         out = out.cropped(to: canvasRect)
 

@@ -13,7 +13,9 @@ func sceneSummary(_ d: Destination) -> String {
 struct SceneEditorView: View {
     @Binding var d: Destination
     @State private var prefs = Store.prefs
-    @State private var layer = 0                    // 0 screen, 1 overlay
+    var startLayer = 0                              // 2 = open on the Super Chat alert layer
+    @State private var layer = 0                    // 0 screen, 1 overlay, 2 Super Chat alerts
+    @State private var alertImage: UIImage?         // the real card in the chosen style
     @State private var pickerItem: PhotosPickerItem?
     @State private var overlayImage: UIImage?
     @State private var base: Destination?           // gesture baseline (translation/magnification are cumulative)
@@ -33,7 +35,7 @@ struct SceneEditorView: View {
                 Text("\(Int(d.canvas.width))×\(Int(d.canvas.height)) — exactly what your viewers see. Tap a layer, drag to move, pinch to resize.")
             }
             Section("Layer") {
-                Picker("Layer", selection: $layer) { Text("Screen").tag(0); Text("Overlay").tag(1) }.pickerStyle(.segmented)
+                Picker("Layer", selection: $layer) { Text("Screen").tag(0); Text("Overlay").tag(1); Text("Alerts").tag(2) }.pickerStyle(.segmented)
             }
             if layer == 0 {
                 Section("Screen") {
@@ -47,6 +49,15 @@ struct SceneEditorView: View {
                         Slider(value: $d.screenZoom, in: 1...ScreenView.maxZoom)
                     }
                     Button("Reset position and zoom") { d.screenZoom = 1; d.screenPanX = 0; d.screenPanY = 0 }
+                }
+            } else if layer == 2 {
+                Section {
+                    VStack(alignment: .leading) {
+                        LabeledContent("Size", value: "\(Int(d.alertW * 100))% of width")
+                        Slider(value: $d.alertW, in: 0.15...0.9)
+                    }
+                } header: { Text("Super Chat alerts") } footer: {
+                    Text("Where Super Chats appear on stream. Style, timing and the YouTube connection are in Super Chat on the Stream tab.")
                 }
             } else {
                 Section {
@@ -82,6 +93,8 @@ struct SceneEditorView: View {
         .onAppear {
             prefs = Store.prefs
             overlayImage = Store.overlayURL(d.overlayFile).flatMap { loadPreview($0) }
+            alertImage = SuperChatCard.render(.sample(), style: prefs.alertStyle, showTotal: prefs.alertShowTotal)
+            if startLayer != 0 { layer = startLayer }
         }
         .onChange(of: prefs) { _, p in Store.prefs = p }
         .onChange(of: pickerItem) { _, item in Task { await loadOverlay(item) } }
@@ -117,6 +130,14 @@ struct SceneEditorView: View {
                         .overlay(Rectangle().stroke(layer == 1 ? Color.ember : .clear, lineWidth: 2))
                         .offset(x: d.overlayX * W - ow / 2, y: d.overlayY * H - oh / 2)
                 }
+                if let img = alertImage, prefs.superChat || layer == 2 {
+                    let aw = d.alertW * W
+                    let ah = aw * Double(img.size.height / img.size.width)
+                    Image(uiImage: img).resizable()
+                        .frame(width: aw, height: ah)
+                        .overlay(Rectangle().stroke(layer == 2 ? Color.ember : .clear, lineWidth: 2))
+                        .offset(x: d.alertX * W - aw / 2, y: d.alertY * H - ah / 2)
+                }
             }
             .frame(width: W, height: H)
             .clipped()
@@ -133,6 +154,10 @@ struct SceneEditorView: View {
 
     private func select(_ p: CGPoint, W: Double, H: Double) {
         let x = Double(p.x) / W, y = Double(p.y) / H
+        if let img = alertImage, prefs.superChat || layer == 2 {
+            let ah = d.alertW * W * Double(img.size.height / img.size.width) / H
+            if abs(x - d.alertX) < d.alertW / 2, abs(y - d.alertY) < ah / 2 { layer = 2; return }
+        }
         if let img = overlayImage, !d.overlayFile.isEmpty, img.size.width > 0 {
             let oh = d.overlayW * W * Double(img.size.height / img.size.width) / H
             if abs(x - d.overlayX) < d.overlayW / 2, abs(y - d.overlayY) < oh / 2 { layer = 1; return }
@@ -146,7 +171,9 @@ struct SceneEditorView: View {
                 if base == nil { base = d }
                 guard let b = base else { return }
                 let dx = Double(g.translation.width) / W, dy = Double(g.translation.height) / H
-                if layer == 1 {
+                if layer == 2 {
+                    d.alertX = min(max(b.alertX + dx, 0), 1); d.alertY = min(max(b.alertY + dy, 0), 1)
+                } else if layer == 1 {
                     d.overlayX = min(max(b.overlayX + dx, -0.5), 1.5); d.overlayY = min(max(b.overlayY + dy, -0.5), 1.5)
                 } else {
                     // Move the window opposite the drag so the content follows the finger.
@@ -165,7 +192,8 @@ struct SceneEditorView: View {
                 if base == nil { base = d }
                 guard let b = base else { return }
                 let k = Double(m.magnification)
-                if layer == 1 { d.overlayW = min(max(b.overlayW * k, 0.05), 2) }
+                if layer == 2 { d.alertW = min(max(b.alertW * k, 0.15), 0.9) }
+                else if layer == 1 { d.overlayW = min(max(b.overlayW * k, 0.05), 2) }
                 else { d.screenZoom = min(max(b.screenZoom * k, 1), ScreenView.maxZoom) }
             }
             .onEnded { _ in base = nil }

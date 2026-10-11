@@ -94,6 +94,7 @@ struct StreamTab: View {
     // another process, so use an app-group heartbeat if this needs to be broadcast-specific.
     @State private var liveSince: Date?
     @State private var sceneDest: Destination?      // scene editor sheet, edits save live
+    @State private var showSuperChat = false
 
     private var active: Destination? { destinations.first { $0.id == activeId } ?? destinations.first }
 
@@ -159,6 +160,31 @@ struct StreamTab: View {
 
                     BreakCard(live: liveSince != nil, prefs: $prefs).padding(.top, 12)
 
+                    // Super Chat alerts: paid messages from YouTube live chat, shown on stream.
+                    Button { showSuperChat = true } label: {
+                        HStack(spacing: 12) {
+                            Text("$").font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 34, height: 34)
+                                .background(LinearGradient(colors: [Color(red: 1, green: 0.79, blue: 0.16), Color(red: 0.96, green: 0.49, blue: 0),
+                                                                    Color(red: 0.91, green: 0.12, blue: 0.39)],
+                                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                                            in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Super Chat alerts").font(.body.weight(.semibold)).foregroundStyle(.primary)
+                                Text(!prefs.superChat ? "Off · show paid YouTube messages on stream"
+                                     : prefs.ytApiKey.isEmpty ? "On · add your YouTube key to connect"
+                                     : "On · \(SuperChatCard.styles[min(max(prefs.alertStyle, 0), 3)]) style, \(prefs.alertSeconds) s")
+                                    .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(14)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .buttonStyle(PressScale())
+                    .padding(.top, 12)
+
                     HStack(alignment: .lastTextBaseline) {
                         section("Channels")
                         Spacer()
@@ -192,6 +218,9 @@ struct StreamTab: View {
                 // Stream controls in the Dynamic Island / Lock Screen while live (iOS's answer to a bubble).
                 if liveSince != nil { LiveControls.start(channel: active?.name ?? "Live") }
                 else { Task { await LiveControls.end() } }
+            }
+            .sheet(isPresented: $showSuperChat, onDismiss: { destinations = Store.destinations; prefs = Store.prefs }) {
+                SuperChatSheet()
             }
             .sheet(item: $sceneDest, onDismiss: { destinations = Store.destinations; prefs = Store.prefs }) { dest in
                 LiveSceneSheet(dest: dest)
@@ -381,6 +410,145 @@ struct BreakCard: View {
         if file != prefs.breakFile, let old = Store.overlayURL(prefs.breakFile) { try? FileManager.default.removeItem(at: old) }
         prefs.breakFile = file                          // StreamTab saves prefs; the broadcast reloads within a second
         thumb = Store.overlayURL(file).flatMap { loadPreview($0) }
+    }
+}
+
+/// Super Chat alerts: look, timing, placement and the YouTube connection, previewed on the stream frame with
+/// the exact card the broadcast draws. Saves as you go; a running broadcast picks changes up within a second.
+struct SuperChatSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var d = Store.active ?? Destination()
+    @State private var prefs = Store.prefs
+    @State private var tier = 4
+    @State private var status = ""
+    @State private var shown = false
+    private var live: Bool { UIScreen.main.isCaptured }
+    private let tierLabels = ["$1", "$2", "$5", "$10", "$20", "$50", "$100"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    stage.listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+                } footer: {
+                    Text("Exactly what viewers see. Colours follow YouTube's Super Chat tiers.")
+                }
+                Section("Preview amount") {
+                    Picker("Amount", selection: $tier) {
+                        ForEach(1...7, id: \.self) { Text(tierLabels[$0 - 1]).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("Style") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(0..<SuperChatCard.styles.count, id: \.self) { i in styleThumb(i) }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                Section {
+                    Toggle("Show Super Chats", isOn: $prefs.superChat)
+                    Toggle("Show supporter's total", isOn: $prefs.alertShowTotal)
+                    Picker("On screen for", selection: $prefs.alertSeconds) {
+                        ForEach([5, 8, 12, 20], id: \.self) { Text("\($0) s").tag($0) }
+                    }
+                    NavigationLink("Position & size") { SceneEditorView(d: $d, startLayer: 2) }
+                    Button(live ? "Send test alert" : "Go live to send a test") { Store.testAlertTier = tier }
+                        .disabled(!live)
+                } header: { Text("On stream") } footer: {
+                    Text("Several at once queue up and play one after another.")
+                }
+                Section {
+                    TextField("@handle or live link", text: $d.ytSource)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("YouTube Data API key", text: $prefs.ytApiKey)
+                    if live, !status.isEmpty {
+                        Label(status, systemImage: status.hasPrefix("Connected") ? "checkmark.circle.fill" : "exclamationmark.circle")
+                            .font(.footnote)
+                    }
+                } header: { Text("YouTube") } footer: {
+                    Text("Super Chats and Super Stickers are read from your live chat with the official YouTube Data API, using your own free key: in Google Cloud Console create a project, enable \"YouTube Data API v3\", then Credentials → Create credentials → API key. The key stays on this device. A key's free daily quota covers about 2–4 hours of live chat. The channel applies to \"\(d.name)\".")
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(EmberBackdrop())
+            .navigationTitle("Super Chat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.fontWeight(.semibold) }
+            }
+        }
+        .tint(.ember)
+        .onAppear { replay() }
+        .onChange(of: prefs) { _, p in Store.prefs = p }
+        .onChange(of: d) { _, new in
+            var list = Store.destinations
+            if let i = list.firstIndex(where: { $0.id == new.id }) { list[i] = new; Store.destinations = list }
+        }
+        .onChange(of: prefs.alertStyle) { _, _ in replay() }
+        .onChange(of: prefs.alertShowTotal) { _, _ in replay() }
+        .onChange(of: tier) { _, _ in replay() }
+        .task {
+            while !Task.isCancelled {
+                status = Store.superChatStatus
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    /// Replays the entrance whenever the look changes, the way it arrives on stream.
+    private func replay() {
+        shown = false
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.72).delay(0.05)) { shown = true }
+    }
+
+    private var stage: some View {
+        let aspect = Double(d.canvas.width / d.canvas.height)
+        let img = SuperChatCard.render(.sample(tier: tier), style: prefs.alertStyle, showTotal: prefs.alertShowTotal)
+        return GeometryReader { geo in
+            let W = Double(geo.size.width), H = Double(geo.size.height)
+            let cw = d.alertW * W, ch = cw * Double(img.size.height / img.size.width)
+            ZStack(alignment: .topLeading) {
+                LinearGradient(colors: [Color(red: 0.11, green: 0.16, blue: 0.29), Color(red: 0.23, green: 0.12, blue: 0.36),
+                                        Color(red: 0.48, green: 0.16, blue: 0.23)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(uiImage: img).resizable()
+                    .frame(width: cw, height: ch)
+                    .scaleEffect(shown ? 1 : 0.9)
+                    .opacity(shown ? 1 : 0)
+                    .offset(x: d.alertX * W - cw / 2, y: d.alertY * H - ch / 2 + (shown ? 0 : 14))
+                HStack(spacing: 5) {
+                    Circle().fill(.red).frame(width: 7, height: 7)
+                    Text("PREVIEW").font(.system(size: 10, weight: .bold)).tracking(0.8).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(.black.opacity(0.8), in: Capsule())
+                .padding(10)
+            }
+        }
+        .aspectRatio(aspect, contentMode: .fit)
+        .frame(maxHeight: 400)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func styleThumb(_ i: Int) -> some View {
+        let on = prefs.alertStyle == i
+        return Button { prefs.alertStyle = i } label: {
+            VStack(spacing: 6) {
+                Image(uiImage: SuperChatCard.render(.sample(tier: tier), style: i, showTotal: false))
+                    .resizable().scaledToFit()
+                    .padding(8)
+                    .frame(width: 150, height: 96)
+                    .background(LinearGradient(colors: [Color(red: 0.09, green: 0.09, blue: 0.16), Color(red: 0.16, green: 0.09, blue: 0.19)],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(on ? Color.ember : Color(.separator), lineWidth: on ? 2 : 0.5))
+                Text(SuperChatCard.styles[i]).font(.subheadline.weight(on ? .semibold : .regular))
+                    .foregroundStyle(on ? Color.ember : .primary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

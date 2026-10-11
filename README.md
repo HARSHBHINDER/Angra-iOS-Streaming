@@ -34,7 +34,7 @@ Free Apple IDs re-sign every 7 days; a paid developer account lasts a year.
 | **Capture** | ReplayKit screen broadcast with mic + app audio; audio-source selection. |
 | **Recording** | Record while streaming. |
 
-The OS red recording indicator stays on whenever broadcasting — by Apple design. Facecam is Android-only (the broadcast extension can't run the camera under its memory limit). iOS has no cross-app overlay, so instead of a floating bubble the stream controls (live timer, mute mic, hide screen, end stream) sit in a Live Activity in the Dynamic Island and on the Lock Screen.
+The OS red recording indicator stays on whenever broadcasting — by Apple design. Super Chat alerts: YouTube Super Chats and Super Stickers appear on stream as a card in one of four styles (Ember, Classic, Minimal, Neon) with avatar, name, amount, message and the supporter's total, placed via the Scene editor's Alerts layer; uses the official YouTube Data API with your own free key. Facecam is Android-only (the broadcast extension can't run the camera under its memory limit). iOS has no cross-app overlay, so instead of a floating bubble the stream controls (live timer, mute mic, hide screen, end stream) sit in a Live Activity in the Dynamic Island and on the Lock Screen.
 
 ## Build
 

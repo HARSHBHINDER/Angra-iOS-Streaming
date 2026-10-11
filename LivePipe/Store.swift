@@ -32,6 +32,10 @@ struct Destination: Codable, Identifiable, Equatable {
     var overlayY = 0.18
     var overlayW = 0.25
     var pinned = false          // favourites sit at the top of the list, no limit
+    var ytSource = ""           // YouTube @handle, channel ID or live link for Super Chat alerts
+    var alertX = 0.5            // Super Chat card centre, canvas fractions
+    var alertY = 0.2
+    var alertW = 0.42           // card width as a fraction of canvas width (height follows the card)
 
     var endpoint: String { key.isEmpty ? url : url.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/" + key }
     /// Stream canvas size in pixels (portrait channels swap the sides).
@@ -55,6 +59,8 @@ extension Destination {
         overlayFile = v(.overlayFile, d.overlayFile)
         overlayX = v(.overlayX, d.overlayX); overlayY = v(.overlayY, d.overlayY); overlayW = v(.overlayW, d.overlayW)
         pinned = v(.pinned, d.pinned)
+        ytSource = v(.ytSource, d.ytSource)
+        alertX = v(.alertX, d.alertX); alertY = v(.alertY, d.alertY); alertW = v(.alertW, d.alertW)
     }
 }
 
@@ -66,6 +72,11 @@ struct Prefs: Codable, Equatable {
     var gameVolume = 1.0
     var breakFile = ""           // break screen image in the app group; empty = plain black, no branding
     var activitySlots = ["mic", "break", "end"]   // Live Activity buttons, ActivityAction ids
+    var superChat = false        // show YouTube Super Chats on stream
+    var ytApiKey = ""            // the streamer's own YouTube Data API key
+    var alertStyle = 0           // SuperChatCard.styles index
+    var alertSeconds = 8
+    var alertShowTotal = true    // add the supporter's running total this stream
     // Recording reuses the active channel's resolution/bitrate (single encoder). No floating bubble on
     // iOS: the OS has no cross-app overlay — status shows via the OS indicator (Live Activity planned).
     static let audioMic = 0, audioGame = 1, audioMix = 2
@@ -81,6 +92,9 @@ extension Prefs {
         micVolume = v(.micVolume, d.micVolume); gameVolume = v(.gameVolume, d.gameVolume)
         breakFile = v(.breakFile, d.breakFile)
         activitySlots = v(.activitySlots, d.activitySlots)
+        superChat = v(.superChat, d.superChat); ytApiKey = v(.ytApiKey, d.ytApiKey)
+        alertStyle = v(.alertStyle, d.alertStyle); alertSeconds = v(.alertSeconds, d.alertSeconds)
+        alertShowTotal = v(.alertShowTotal, d.alertShowTotal)
     }
 }
 
@@ -155,6 +169,16 @@ enum Store {
     static var zoomed: Bool {
         get { defaults.bool(forKey: "zoomed") }
         set { defaults.set(newValue, forKey: "zoomed") }
+    }
+    /// Super Chat connection status written by the extension for the app ("Connected…", errors).
+    static var superChatStatus: String {
+        get { defaults.string(forKey: "superChatStatus") ?? "" }
+        set { defaults.set(newValue, forKey: "superChatStatus") }
+    }
+    /// Set by the app's "Send test alert"; the extension plays a sample card of that tier and clears it.
+    static var testAlertTier: Int {
+        get { defaults.integer(forKey: "testAlertTier") }
+        set { defaults.set(newValue, forKey: "testAlertTier") }
     }
     static var stopRequested: Bool {
         get { defaults.bool(forKey: "stopRequested") }

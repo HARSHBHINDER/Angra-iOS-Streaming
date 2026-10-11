@@ -42,7 +42,7 @@ targets:
     type: app-extension
     platform: iOS
     deploymentTarget: "17.0"
-    sources: [BroadcastExt, LivePipe/Store.swift]  # share the Destination/Store model with the extension
+    sources: [BroadcastExt, LivePipe/Store.swift, LivePipe/SuperChat.swift]  # share the Destination/Store model with the extension
     info:
       path: BroadcastExt/Info.plist
       properties:
