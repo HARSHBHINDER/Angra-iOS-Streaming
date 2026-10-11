@@ -1,7 +1,6 @@
 import CoreGraphics
 import Foundation
 import ImageIO
-import UIKit
 
 /// Shared between the app and the broadcast extension via the app group.
 /// Mirrors the Android Destination/Prefs model so both platforms behave the same.
@@ -79,7 +78,7 @@ struct Prefs: Codable, Equatable {
     var alertSeconds = 8
     var alertShowTotal = true    // add the supporter's running total this stream
     var theme = "original"       // Theme.all id
-    var charging = 0             // Charging mode: how much the stream eases off on the charger
+    var liveTheme = false        // the theme moves (~10 fps) while the app is open; off = it holds still
     // Recording reuses the active channel's resolution/bitrate (single encoder). No floating bubble on
     // iOS: the OS has no cross-app overlay — status shows via the OS indicator (Live Activity planned).
     static let audioMic = 0, audioGame = 1, audioMix = 2
@@ -98,36 +97,7 @@ extension Prefs {
         superChat = v(.superChat, d.superChat); ytApiKey = v(.ytApiKey, d.ytApiKey)
         alertStyle = v(.alertStyle, d.alertStyle); alertSeconds = v(.alertSeconds, d.alertSeconds)
         alertShowTotal = v(.alertShowTotal, d.alertShowTotal)
-        theme = v(.theme, d.theme)
-        charging = v(.charging, d.charging)
-    }
-}
-
-/// Charging modes that actually change how fast the battery fills while streaming (same rules as Android's
-/// Charging.kt). iOS gives apps no control of the charger or its 80% limit (Settings > Battery > Charging), and no
-/// current or temperature readings. What an app controls is its own load: the charger powers the phone first and
-/// the battery gets the rest, and iOS slows or holds charging when the phone runs hot. The broadcast is the
-/// biggest load (encoder + radio scale with bitrate), so on the charger Medium and Fast ease the bitrate.
-enum Charging {
-    static let names = ["Normal", "Medium", "Fast"]
-
-    static func factor(_ mode: Int, plugged: Bool, warm: Bool) -> Double {
-        if !plugged || mode == 0 { return 1 }
-        if mode == 1 { return warm ? 0.6 : 1 }
-        return warm ? 0.35 : 0.6
-    }
-
-    /// Live state: plugged in (charging or full on power) and warm (thermal state fair or above).
-    @MainActor static func now() -> (plugged: Bool, warm: Bool) {
-        let d = UIDevice.current
-        d.isBatteryMonitoringEnabled = true
-        return (d.batteryState == .charging || d.batteryState == .full,
-                ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.fair.rawValue)
-    }
-
-    @MainActor static func factor(_ mode: Int) -> Double {
-        let s = now()
-        return factor(mode, plugged: s.plugged, warm: s.warm)
+        theme = v(.theme, d.theme); liveTheme = v(.liveTheme, d.liveTheme)
     }
 }
 
@@ -217,11 +187,6 @@ enum Store {
     static var liveSince: Double {
         get { defaults.double(forKey: "liveSince") }
         set { defaults.set(newValue, forKey: "liveSince") }
-    }
-    /// Share of the channel bitrate the charging mode currently allows (written by the extension).
-    static var chargeEase: Double {
-        get { defaults.object(forKey: "chargeEase") as? Double ?? 1 }
-        set { defaults.set(newValue, forKey: "chargeEase") }
     }
     static var stopRequested: Bool {
         get { defaults.bool(forKey: "stopRequested") }

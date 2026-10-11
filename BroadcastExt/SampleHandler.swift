@@ -22,7 +22,6 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     private let alerts = AlertPlayer()  // Super Chat cards
     private var chat: YouTubeChat?
     private var reload: Task<Void, Never>?
-    private var appliedBitrate = 0               // bitrate ceiling in force (channel x data saver x charging)
 
     /// Reads the active channel straight from the shared group so the extension needs no app-only code.
     private static func activeDestination() -> Destination? {
@@ -107,22 +106,16 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
         if test > 0 { Store.testAlertTier = 0; alerts.enqueue(.sample(tier: test)) }
         let f = LiveFlags(micMuted: Store.micMuted, onBreak: Store.onBreak, gameMuted: Store.gameMuted,
                           overlayHidden: Store.overlayHidden, zoomed: Store.zoomed, dataSaver: Store.dataSaver)
-        let d0 = lock.withLock { () -> Destination? in
+        let (saverChanged, d0) = lock.withLock { () -> (Bool, Destination?) in
             defer { live = f }
-            return dest
+            return (live.dataSaver != f.dataSaver, dest)
+        }
+        // Data saver halves the bitrate for weak connections.
+        if saverChanged, let d0, var v = await session?.stream.videoSettings {
+            v.bitRate = f.dataSaver ? d0.videoBitrate / 2 : d0.videoBitrate
+            try? await session?.stream.setVideoSettings(v)
         }
         let p = Store.prefs
-        // Bitrate ceiling: data saver halves it; the charging mode eases it on the charger (see Charging).
-        if let d0 {
-            let ease = await Charging.factor(p.charging)
-            let target = Int(Double(d0.videoBitrate) * (f.dataSaver ? 0.5 : 1) * ease)
-            if target != appliedBitrate, var v = await session?.stream.videoSettings {
-                appliedBitrate = target
-                v.bitRate = target
-                try? await session?.stream.setVideoSettings(v)
-            }
-            Store.chargeEase = ease
-        }
         let changed = lock.withLock { () -> Bool in
             defer { prefs = p }
             return p != prefs

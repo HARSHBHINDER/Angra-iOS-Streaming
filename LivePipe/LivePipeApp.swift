@@ -34,12 +34,8 @@ struct Theme: Identifiable, Equatable {
         Theme(id: "sakura", name: "Sakura", dark: false, bg: 0xFFFFF4F6, card: 0xFFFFFFFF, accent: 0xFFE0457B, brush: [0xFFFF8FAB, 0xFFE0457B], glow: [0xFFFF8FAB, 0xFFFFC2D1]),
         Theme(id: "matrix", name: "Matrix", dark: true, bg: 0xFF000400, card: 0xFF051208, accent: 0xFF00E676, brush: [0xFF1DB954, 0xFF0A6E2A], glow: [0xFF00FF41, 0x00000000]),
         Theme(id: "vaporwave", name: "Vaporwave", dark: true, bg: 0xFF1C1033, card: 0xFF281845, accent: 0xFF01CDFE, brush: [0xFFFF71CE, 0xFFB967FF], glow: [0xFFFF71CE, 0xFF01CDFE]),
-        Theme(id: "gold", name: "Gold Luxe", dark: true, bg: 0xFF0B0906, card: 0xFF17140D, accent: 0xFFD4AF37, brush: [0xFFE6C55A, 0xFFA87B12], glow: [0xFFD4AF37, 0x00000000]),
         Theme(id: "nord", name: "Nord", dark: true, bg: 0xFF2E3440, card: 0xFF3B4252, accent: 0xFF88C0D0, brush: [0xFF81A1C1, 0xFF5E81AC], glow: [0xFF88C0D0, 0xFFB48EAD]),
         Theme(id: "dune", name: "Dune", dark: false, bg: 0xFFF2E8DA, card: 0xFFFFF9F0, accent: 0xFFC2410C, brush: [0xFFF59E0B, 0xFFC2410C], glow: [0xFFF59E0B, 0xFFC2410C]),
-        Theme(id: "ultraviolet", name: "Ultraviolet", dark: true, bg: 0xFF0B0515, card: 0xFF170B2A, accent: 0xFFB57BFF, brush: [0xFFA855F7, 0xFF6D28D9], glow: [0xFFA855F7, 0xFF3B82F6]),
-        Theme(id: "titanium", name: "Titanium", dark: false, bg: 0xFFE4E4E1, card: 0xFFF4F4F2, accent: 0xFF55555A, brush: [0xFF8E8E93, 0xFF48484A], glow: [0x00000000, 0x00000000]),
-        Theme(id: "hologram", name: "Hologram", dark: false, bg: 0xFFF3F0FF, card: 0xFFFFFFFF, accent: 0xFF7C5CFF, brush: [0xFFFF7AD9, 0xFF7C5CFF, 0xFF3DE1FF], glow: [0xFFFF7AD9, 0xFF3DE1FF]),
     ]
     static func byId(_ id: String) -> Theme { all.first { $0.id == id } ?? all[2] }
     /// Cached so view bodies don't decode prefs on every access; set by the Settings picker.
@@ -59,41 +55,56 @@ var emberGradient: LinearGradient {
     LinearGradient(colors: Theme.current.brush.map(Color.init(argb:)), startPoint: .topLeading, endPoint: .bottomTrailing)
 }
 
-/// Grouped background with the theme's two glows behind the large title — the app's signature.
+/// Theme motion time. Runs only while Live theme is on and the app is active; otherwise it holds the exact moment it
+/// stopped, so a paused theme draws nothing and picks up where it left off.
+@Observable final class LiveClock {
+    static let shared = LiveClock()
+    private(set) var running = false
+    private var frozen: TimeInterval = 0
+    private var since = Date()
+    func time(at d: Date) -> Double { running ? frozen + d.timeIntervalSince(since) : frozen }
+    func set(running on: Bool) {
+        guard on != running else { return }
+        if on { since = .now } else { frozen += Date.now.timeIntervalSince(since) }
+        running = on
+    }
+}
+
+/// Grouped background with the theme's two glows behind the large title — the app's signature. With Live theme on,
+/// the glows drift and breathe at ~10 fps; paused, the timeline stops and the frame holds.
 struct EmberBackdrop: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
-        let dark = scheme == .dark, t = Theme.current
-        let g = t.glow.map(Color.init(argb:))
-        ZStack {
-            if t.dark == nil { Color(.systemGroupedBackground) } else { Color(argb: t.bg) }
-            RadialGradient(colors: [g[0].opacity(dark ? 0.42 : 0.20), .clear], center: .topTrailing, startRadius: 0, endRadius: 520)
-            RadialGradient(colors: [g[1].opacity(dark ? 0.22 : 0.12), .clear],
-                           center: UnitPoint(x: 0, y: 0.12), startRadius: 0, endRadius: 360)
+        let clock = LiveClock.shared
+        TimelineView(.animation(minimumInterval: 0.1, paused: !clock.running)) { ctx in
+            let s = clock.time(at: ctx.date)
+            let dark = scheme == .dark, t = Theme.current
+            let g = t.glow.map(Color.init(argb:))
+            ZStack {
+                if t.dark == nil { Color(.systemGroupedBackground) } else { Color(argb: t.bg) }
+                RadialGradient(colors: [g[0].opacity((dark ? 0.42 : 0.20) * (0.85 + 0.15 * sin(s * 0.6))), .clear],
+                               center: UnitPoint(x: 1 - 0.12 * (1 - cos(s * 0.21)), y: 0.06 * sin(s * 0.17)), startRadius: 0, endRadius: 520)
+                RadialGradient(colors: [g[1].opacity((dark ? 0.22 : 0.12) * (0.8 + 0.2 * sin(s * 0.45 + 1))), .clear],
+                               center: UnitPoint(x: 0.1 * sin(s * 0.13), y: 0.12 + 0.08 * sin(s * 0.19)), startRadius: 0, endRadius: 360)
+            }
         }
         .ignoresSafeArea()
     }
 }
 
-/// Live charging state: power source, battery level, thermal state, and how far the stream is easing.
+/// Live charging state from the only readings iOS gives apps: power state, battery level and thermal state.
 struct ChargingStatus: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { _ in
             let d = UIDevice.current
-            let s = Charging.now()
             let level = d.batteryLevel < 0 ? "" : " · \(Int(d.batteryLevel * 100))%"
             let thermal = ProcessInfo.processInfo.thermalState
-            let ease = UIScreen.main.isCaptured ? Store.chargeEase : 1
-            VStack(alignment: .leading, spacing: 4) {
-                LabeledContent(d.batteryState == .charging ? "Charging\(level)" : s.plugged ? "On power\(level)" : "On battery\(level)") {
-                    Text(thermal == .nominal ? "Cool" : thermal == .fair ? "Warm" : thermal == .serious ? "Hot" : "Very hot")
-                        .foregroundStyle(s.warm ? Color.red : .secondary)
-                }
-                if ease < 1 {
-                    Text("Stream eased to \(Int(ease * 100))% bitrate for charging").font(.footnote).foregroundStyle(Color.ember)
-                }
+            LabeledContent(d.batteryState == .charging ? "Charging\(level)" : d.batteryState == .full ? "On power\(level)" : "On battery\(level)") {
+                Text(thermal == .nominal ? "Cool" : thermal == .fair ? "Warm" : thermal == .serious ? "Hot" : "Very hot")
+                    .foregroundStyle(thermal == .nominal ? Color.secondary : Color.red)
             }
         }
+        .onAppear { UIDevice.current.isBatteryMonitoringEnabled = true }
     }
 }
 
@@ -185,7 +196,10 @@ struct RootView: View {
             }
         }
         // Widgets show channels and settings; refresh them whenever the user leaves the app.
-        .onChange(of: phase) { _, p in if p == .background { WidgetCenter.shared.reloadAllTimelines() } }
+        .onChange(of: phase, initial: true) { _, p in
+            LiveClock.shared.set(running: Store.prefs.liveTheme && p == .active)   // never animates out of sight
+            if p == .background { WidgetCenter.shared.reloadAllTimelines() }
+        }
     }
 }
 
@@ -334,6 +348,8 @@ struct StreamTab: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 32)
+                .frame(maxWidth: 720)                  // iPad: a readable column, centred, not stretched edge to edge
+                .frame(maxWidth: .infinity)
             }
             .background(EmberBackdrop())
             .background(HiddenPicker().frame(width: 1, height: 1).opacity(0.01))
@@ -1053,6 +1069,11 @@ struct SettingsTab: View {
                     ThemePicker(selected: $prefs.theme)
                 } header: { Text("Theme · \(Theme.byId(prefs.theme).name)") }
                 Section {
+                    Toggle("Live theme", isOn: $prefs.liveTheme)
+                } footer: {
+                    Text("Brings the theme to life. Turn it off and it stops on that exact frame. It also pauses whenever you leave the app, so it never runs in the background. Uses a little more battery while you're in the app.")
+                }
+                Section {
                     Picker("Capture", selection: $prefs.audioSource) {
                         Text("Mic").tag(0); Text("Game").tag(1); Text("Both").tag(2)
                     }.pickerStyle(.segmented)
@@ -1060,12 +1081,9 @@ struct SettingsTab: View {
                     Text("Mic uses the iPhone microphone, or a connected Bluetooth, wired or USB mic.")
                 }
                 Section {
-                    Picker("Charging", selection: $prefs.charging) {
-                        ForEach(0..<3, id: \.self) { Text(Charging.names[$0]).tag($0) }
-                    }.pickerStyle(.segmented)
                     ChargingStatus()
                 } header: { Text("Charging") } footer: {
-                    Text("Normal: the stream keeps full quality and the battery gets what's left. Medium: on the charger, when the iPhone runs warm, the stream eases to 60% bitrate so charging isn't slowed. Fast: on the charger the stream runs at 60% (35% when warm), leaving the most power for the battery. iOS doesn't let apps change the charger itself; the 80% limit is in Settings > Battery > Charging.")
+                    Text("iPhone keeps the charger under iOS control: apps can't set charging speed or limits, and App Store iPhones can't be rooted. For gentler charging, use Settings › Battery › Charging (80% limit on iPhone 15 and later) or a lower-watt charger: 5 W is about Normal, 20 W or more is Fast.")
                 }
                 Section {
                     Toggle("Adaptive bitrate", isOn: $prefs.adaptiveBitrate)
@@ -1096,6 +1114,7 @@ struct SettingsTab: View {
             .navigationTitle("Settings")
             .onAppear { prefs = Store.prefs }
             .onChange(of: prefs) { _, new in Store.prefs = new }
+            .onChange(of: prefs.liveTheme) { _, on in LiveClock.shared.set(running: on) }
             .onChange(of: prefs.theme) { _, id in
                 Theme.current = Theme.byId(id)
                 NotificationCenter.default.post(name: .themeChanged, object: nil)
