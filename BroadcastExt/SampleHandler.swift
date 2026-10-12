@@ -140,7 +140,7 @@ final class SampleHandler: RPBroadcastSampleHandler, @unchecked Sendable {
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
         let (dest0, prefs, f) = lock.withLock { (self.dest, self.prefs, self.live) }
         var dest = dest0
-        if f.zoomed { dest?.screenZoom = min((dest?.screenZoom ?? 1) * 1.5, ScreenView.maxZoom) }
+        if f.zoomed, let z = dest?.screenZoom { dest?.screenZoom = min(z * 1.5, ScreenView.maxZoom) }   // read first: Swift 6 exclusivity
         if f.overlayHidden { dest?.overlayFile = "" }
         switch sampleBufferType {
         case .video:
