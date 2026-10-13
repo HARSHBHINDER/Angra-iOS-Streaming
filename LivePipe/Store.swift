@@ -80,7 +80,7 @@ struct Prefs: Codable, Equatable {
     var theme = "original"       // Theme.all id
     var liveTheme = false        // the theme moves (~10 fps) while the app is open; off = it holds still
     // Recording reuses the active channel's resolution/bitrate (single encoder). No floating bubble on
-    // iOS: the OS has no cross-app overlay — status shows via the OS indicator (Live Activity planned).
+    // iOS: the OS has no cross-app overlay — status shows via the OS indicator and the Live Activity.
     static let audioMic = 0, audioGame = 1, audioMix = 2
 }
 
