@@ -77,7 +77,7 @@ struct Prefs: Codable, Equatable {
     var alertStyle = 0           // SuperChatCard.styles index
     var alertSeconds = 8
     var alertShowTotal = true    // add the supporter's running total this stream
-    var theme = "original"       // Theme.all id
+    var theme = "wa"             // Theme.all id
     var liveTheme = false        // the theme moves (~10 fps) while the app is open; off = it holds still
     // Recording reuses the active channel's resolution/bitrate (single encoder). No floating bubble on
     // iOS: the OS has no cross-app overlay — status shows via the OS indicator and the Live Activity.

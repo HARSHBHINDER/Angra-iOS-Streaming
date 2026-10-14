@@ -20,6 +20,8 @@ struct Theme: Identifiable, Equatable {
 
     /// Tron Legacy = ggsci pal_tron("legacy"); Cyberpunk = CDPR acid yellow, red, turquoise; Nord = nordtheme.com.
     static let all: [Theme] = [
+        // Wa: paper and ink — unbleached silk by day, sumi ink by night, one indigo action colour, a seal-red stamp.
+        Theme(id: "wa", name: "Wa", dark: nil, bg: 0xFFFBFAF5, card: 0xFFFFFFFF, accent: 0xFF165E83, brush: [0xFF1F77A6, 0xFF165E83], glow: [0xFF165E83, 0xFFC85554]),
         Theme(id: "matte", name: "Matte Black", dark: true, bg: 0xFF000000, card: 0xFF111111, accent: 0xFFA1A1A6, brush: [0xFF4A4A4E, 0xFF242426], glow: [0x14FFFFFF, 0x00000000]),
         Theme(id: "white", name: "White", dark: false, bg: 0xFFFFFFFF, card: 0xFFF5F5F7, accent: 0xFF1D1D1F, brush: [0xFF3A3A3C, 0xFF1D1D1F], glow: [0x00000000, 0x00000000]),
         Theme(id: "original", name: "Original", dark: nil, bg: 0xFF000000, card: 0xFF1C1C1E, accent: 0xFFF2542D, brush: [0xFFFF2D3A, 0xFFFF8A00], glow: [0xFFFF3B30, 0xFFFF8A00]),
@@ -37,7 +39,7 @@ struct Theme: Identifiable, Equatable {
         Theme(id: "nord", name: "Nord", dark: true, bg: 0xFF2E3440, card: 0xFF3B4252, accent: 0xFF88C0D0, brush: [0xFF81A1C1, 0xFF5E81AC], glow: [0xFF88C0D0, 0xFFB48EAD]),
         Theme(id: "dune", name: "Dune", dark: false, bg: 0xFFF2E8DA, card: 0xFFFFF9F0, accent: 0xFFC2410C, brush: [0xFFF59E0B, 0xFFC2410C], glow: [0xFFF59E0B, 0xFFC2410C]),
     ]
-    static func byId(_ id: String) -> Theme { all.first { $0.id == id } ?? all[2] }
+    static func byId(_ id: String) -> Theme { all.first { $0.id == id } ?? all[0] }
     /// Cached so view bodies don't decode prefs on every access; set by the Settings picker.
     static var current = byId(Store.prefs.theme)
     var scheme: ColorScheme? { dark.map { $0 ? .dark : .light } }
@@ -81,7 +83,8 @@ struct EmberBackdrop: View {
             let dark = scheme == .dark, t = Theme.current
             let g = t.glow.map(Color.init(argb:))
             ZStack {
-                if t.dark == nil { Color(.systemGroupedBackground) } else { Color(argb: t.bg) }
+                if t.id == "wa" { Color(argb: dark ? 0xFF161513 : 0xFFFBFAF5) }
+                else if t.dark == nil { Color(.systemGroupedBackground) } else { Color(argb: t.bg) }
                 RadialGradient(colors: [g[0].opacity((dark ? 0.42 : 0.20) * (0.85 + 0.15 * sin(s * 0.6))), .clear],
                                center: UnitPoint(x: 1 - 0.12 * (1 - cos(s * 0.21)), y: 0.06 * sin(s * 0.17)), startRadius: 0, endRadius: 520)
                 RadialGradient(colors: [g[1].opacity((dark ? 0.22 : 0.12) * (0.8 + 0.2 * sin(s * 0.45 + 1))), .clear],
@@ -89,6 +92,17 @@ struct EmberBackdrop: View {
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Hanko: a square seal-red stamp, slightly askew as if pressed by hand — the Wa theme's mark before the app name.
+struct Stamp: View {
+    var body: some View {
+        Text("配").font(.system(size: 25, weight: .bold, design: .serif)).foregroundStyle(.white)
+            .frame(width: 50, height: 50)
+            .background(Color(argb: 0xFFC85554), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(.white.opacity(0.28), lineWidth: 1.5))
+            .rotationEffect(.degrees(-4))
     }
 }
 
@@ -177,7 +191,8 @@ struct RootView: View {
             SettingsTab().tag(2).tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .tint(.ember)
-        .id(themeId)                                     // a new theme rebuilds every screen with its colours
+        .id(themeId)
+        .fontDesign(Theme.current.id == "wa" ? .rounded : .default)   // Wa: soft rounded interface type                                     // a new theme rebuilds every screen with its colours
         .preferredColorScheme(Theme.current.scheme)
         .onReceive(NotificationCenter.default.publisher(for: .themeChanged)) { _ in themeId = Theme.current.id }
         // Home Screen widget links. Go Live opens the system broadcast picker (only the app may start a broadcast).
@@ -381,14 +396,22 @@ struct StreamTab: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Image("Brand").resizable().frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .ember.opacity(0.45), radius: 10, y: 4)
+            let wa = Theme.current.id == "wa"
+            if wa { Stamp() } else {
+                Image("Brand").resizable().frame(width: 52, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: .ember.opacity(0.45), radius: 10, y: 4)
+            }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Angra Streaming").font(.system(size: 28, weight: .bold)).tracking(-0.6)
+                Text("Angra Streaming").font(.system(size: 28, weight: .bold, design: wa ? .serif : .default)).tracking(wa ? 0 : -0.6)
+                    .lineLimit(1).minimumScaleFactor(0.6)
                 Text(liveSince != nil ? "You're live. Make it count."
                      : active == nil ? "Add a channel to get started" : "Ready when you are")
                     .font(.subheadline).foregroundStyle(.secondary)
+                if wa {
+                    let ko = microSeason()
+                    Text("\(ko.english) · \(ko.sekki)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
         }
         .padding(.top, 12)
